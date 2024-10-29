@@ -4,6 +4,7 @@ import (
 	"testing"
 )
 
+// Test proverava da li radi upisivanje i citanje iz Bloom filtera
 func TestBloomFilter(t *testing.T) {
 	bf := MakeBloomFilter(1000, 0.01)
 	bf.Add([]byte("hello"))
@@ -16,6 +17,7 @@ func TestBloomFilter(t *testing.T) {
 	}
 }
 
+// Test proverava da li radi serijalizacija i deserijalizacija Bloom filtera
 func TestSerializaton(t *testing.T) {
 	bf := MakeBloomFilter(1000, 0.01)
 	bf.Add([]byte("hello"))
