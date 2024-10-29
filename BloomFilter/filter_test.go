@@ -22,12 +22,27 @@ func TestSerializaton(t *testing.T) {
 	bf := MakeBloomFilter(1000, 0.01)
 	bf.Add([]byte("hello"))
 	bf.Add([]byte("nesto"))
-	serialized := bf.Serialize()
-	bf2 := Deserialize(serialized)
-	if !bf2[0].Read([]byte("hello")) {
+
+	bf2 := MakeBloomFilter(1000, 0.01)
+	bf2.Add([]byte("world"))
+
+	serialized1 := bf.Serialize()
+	serialized2 := bf2.Serialize()
+	deserialized := Deserialize(append(serialized1, serialized2...))
+
+	bf3 := deserialized[0]
+	bf4 := deserialized[1]
+
+	if !bf3.Read([]byte("hello")) {
 		t.Error("hello should be in the filter")
 	}
-	if bf2[0].Read([]byte("world")) {
+	if bf3.Read([]byte("world")) {
 		t.Error("world should not be in the filter")
+	}
+	if !bf4.Read([]byte("world")) {
+		t.Error("world should be in the filter")
+	}
+	if bf4.Read([]byte("hello")) {
+		t.Error("hello should not be in the filter")
 	}
 }
