@@ -1,12 +1,14 @@
-package BloomFilter
+package test
 
 import (
 	"testing"
+
+	BloomFilter "github.com/iigor000/database/structures/BloomFIlter"
 )
 
 // Test proverava da li radi upisivanje i citanje iz Bloom filtera
 func TestBloomFilter(t *testing.T) {
-	bf := MakeBloomFilter(1000, 0.01)
+	bf := BloomFilter.MakeBloomFilter(1000, 0.01)
 	bf.Add([]byte("hello"))
 	bf.Add([]byte("nesto"))
 	if !bf.Read([]byte("hello")) {
@@ -19,16 +21,16 @@ func TestBloomFilter(t *testing.T) {
 
 // Test proverava da li radi serijalizacija i deserijalizacija Bloom filtera
 func TestSerializaton(t *testing.T) {
-	bf := MakeBloomFilter(1000, 0.01)
+	bf := BloomFilter.MakeBloomFilter(1000, 0.01)
 	bf.Add([]byte("hello"))
 	bf.Add([]byte("nesto"))
 
-	bf2 := MakeBloomFilter(1000, 0.01)
+	bf2 := BloomFilter.MakeBloomFilter(1000, 0.01)
 	bf2.Add([]byte("world"))
 
 	serialized1 := bf.Serialize()
 	serialized2 := bf2.Serialize()
-	deserialized := Deserialize(append(serialized1, serialized2...))
+	deserialized := BloomFilter.Deserialize(append(serialized1, serialized2...))
 
 	bf3 := deserialized[0]
 	bf4 := deserialized[1]
