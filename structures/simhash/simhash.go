@@ -1,4 +1,4 @@
-package main
+package simhash
 
 import (
 	"crypto/md5"
@@ -13,10 +13,6 @@ func GetHashAsString(data []byte) string {
 		res = fmt.Sprintf("%s%b", res, b)
 	}
 	return res
-}
-
-func main() {
-	fmt.Println(GetHashAsString(SimHash("blab ld!")))
 }
 
 func Hash(data []byte) []byte {
@@ -91,4 +87,18 @@ func NumerizeTokens(tokens []string) map[string]int {
 	}
 
 	return m
+}
+
+func CompareHashes(hash1, hash2 []byte) int {
+	count := 0
+	for i := 0; i < len(hash1); i++ {
+		for j := 0; j < 8; j++ {
+			bit1 := (hash1[i] >> j) & 1
+			bit2 := (hash2[i] >> j) & 1
+			if bit1 != bit2 {
+				count++
+			}
+		}
+	}
+	return count
 }
