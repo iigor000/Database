@@ -1,4 +1,4 @@
-package BloomFilter
+package bloomfilter
 
 import "math"
 

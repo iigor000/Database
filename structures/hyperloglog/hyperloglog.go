@@ -1,4 +1,4 @@
-package hll
+package hyperloglog
 
 import (
 	"crypto/md5"

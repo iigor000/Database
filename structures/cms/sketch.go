@@ -1,10 +1,14 @@
 package cms
 
-import "encoding/binary"
+import (
+	"encoding/binary"
+
+	"github.com/iigor000/database/structures/hash"
+)
 
 // Struktura CountMinSketch
 type CountMinSketch struct {
-	HashFunctions []HashWithSeed
+	HashFunctions []hash.HashWithSeed
 	Table         [][]uint64
 }
 
@@ -12,7 +16,7 @@ type CountMinSketch struct {
 func MakeCountMinSketch(epsilon float64, delta float64) CountMinSketch {
 	m := CalculateM(epsilon)
 	k := CalculateK(delta)
-	h := CreateHashFunctions(k)
+	h := hash.CreateHashFunctions(uint32(k))
 
 	// Pravimo matricu na ovaj nacin, kako bi niz bio zajedno u memoriji
 	matrix := make([][]uint64, k)
@@ -86,9 +90,9 @@ func Deserialize(data []byte) []CountMinSketch {
 
 		data = data[8:]
 
-		hashes := make([]HashWithSeed, k)
+		hashes := make([]hash.HashWithSeed, k)
 		for i := 0; i < int(k); i++ {
-			hashes[i] = HashWithSeed{Seed: data[i*4 : (i+1)*4]}
+			hashes[i] = hash.HashWithSeed{Seed: data[i*4 : (i+1)*4]}
 		}
 
 		data = data[k*4:]

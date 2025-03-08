@@ -1,12 +1,14 @@
-package BloomFilter
+package bloomfilter
 
 import (
 	"encoding/binary"
+
+	hash "github.com/iigor000/database/structures/hash"
 )
 
 // Struktura za Bloom filter, koristi se niz boolova, jer oni zauzimaju jedan bit u memoriji
 type BloomFilter struct {
-	HashFunctions []HashWithSeed
+	HashFunctions []hash.HashWithSeed
 	Filter        []bool
 }
 
@@ -14,7 +16,7 @@ type BloomFilter struct {
 func MakeBloomFilter(expectedElements int, falsePositive float64) BloomFilter {
 	m := CalculateM(expectedElements, falsePositive)
 	k := CalculateK(expectedElements, m)
-	h := CreateHashFunctions(k)
+	h := hash.CreateHashFunctions(k)
 	return BloomFilter{HashFunctions: h, Filter: make([]bool, m)}
 }
 
@@ -91,10 +93,10 @@ func Deserialize(data []byte) []BloomFilter {
 		}
 
 		// Ucitavamo hash funkcije, one su dugacke 4 bajta, pa ih ucitavamo po 4 od indeksa 8+m
-		hashes := make([]HashWithSeed, 0)
+		hashes := make([]hash.HashWithSeed, 0)
 		for i := 0; i < int(k); i++ {
 			seed := data[8+int(m)+i*4 : 8+int(m)+(i+1)*4]
-			h := HashWithSeed{Seed: seed}
+			h := hash.HashWithSeed{Seed: seed}
 			hashes = append(hashes, h)
 		}
 
