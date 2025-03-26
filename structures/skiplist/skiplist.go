@@ -3,9 +3,7 @@ package skiplist
 import (
 	"bytes"
 	"encoding/binary"
-	"math"
 	"math/rand"
-	"time"
 
 	memtable "github.com/iigor000/database/structures/adapter"
 )
@@ -18,7 +16,7 @@ type SkipList struct {
 
 type Node struct {
 	next  *Node
-	key   int
+	key   []byte
 	value []byte
 	down  *Node
 }
@@ -36,7 +34,7 @@ func (s *SkipList) roll() int {
 }
 
 func MakeSkipList(maxHeight int) *SkipList {
-	root := Node{key: math.MinInt}
+	root := Node{}
 
 	node := &root
 
@@ -49,20 +47,20 @@ func MakeSkipList(maxHeight int) *SkipList {
 	return &SkipList{maxHeight: maxHeight, root: &root, size: maxHeight}
 }
 
-func (s *SkipList) Update1(key int, value []byte) {
+func (s *SkipList) Update1(key []byte, value []byte) {
 	nodes := s.SearchNodes(key)
 	for _, node := range nodes {
-		if node.next != nil && node.next.key == key {
+		if node.next != nil && bytes.Compare(node.next.key, key) != 0 {
 			node.next.value = value
 		}
 	}
 }
 
-func (s *SkipList) Search(value int) []byte {
+func (s *SkipList) Search(value []byte) []byte {
 	node := s.root
 
-	for node.key != value {
-		if node.next == nil || node.next.key > value {
+	for bytes.Compare(node.key, value) != 0 {
+		if node.next == nil || bytes.Compare(node.next.key, value) == 1 {
 			if node.down != nil {
 				node = node.down
 			} else {
@@ -73,18 +71,18 @@ func (s *SkipList) Search(value int) []byte {
 		}
 	}
 
-	if node.key != value {
+	if bytes.Compare(node.key, value) != 0 {
 		return []byte("")
 	}
 
 	return node.value
 }
 
-func (s *SkipList) SearchNodes(value int) []*Node {
+func (s *SkipList) SearchNodes(value []byte) []*Node {
 	node := s.root
 	nodes := make([]*Node, 0)
-	for node.key != value && node.down != nil {
-		if node.next == nil || node.next.key > value {
+	for bytes.Compare(node.key, value) != 0 && node.down != nil {
+		if node.next == nil || bytes.Compare(node.next.key, value) == 1 {
 			nodes = append(nodes, node)
 			node = node.down
 		} else {
@@ -97,7 +95,7 @@ func (s *SkipList) SearchNodes(value int) []*Node {
 		node = node.down
 	}
 
-	for node.next != nil && node.next.key <= value {
+	for node.next != nil && bytes.Compare(node.next.key, value) != 1 {
 		node = node.next
 	}
 
@@ -106,7 +104,7 @@ func (s *SkipList) SearchNodes(value int) []*Node {
 	return nodes
 }
 
-func (s *SkipList) Add(key int, value []byte) {
+func (s *SkipList) Add(key []byte, value []byte) {
 	levels := s.roll()
 
 	nodes := s.SearchNodes(key)
@@ -122,11 +120,11 @@ func (s *SkipList) Add(key int, value []byte) {
 	}
 }
 
-func (s *SkipList) SearchBeforeNodes(key int) []*Node {
+func (s *SkipList) SearchBeforeNodes(key []byte) []*Node {
 	node := s.root
 	nodes := make([]*Node, 0)
 	for node.down != nil {
-		if node.next == nil || node.next.key >= key {
+		if node.next == nil || bytes.Compare(node.next.key, key) != -1 {
 			nodes = append(nodes, node)
 			node = node.down
 		} else {
@@ -134,11 +132,11 @@ func (s *SkipList) SearchBeforeNodes(key int) []*Node {
 		}
 	}
 
-	for node.next != nil && node.next.key != key {
+	for node.next != nil && bytes.Compare(node.next.key, key) != 0 {
 		node = node.next
 	}
 
-	if node.next != nil && node.next.key != key {
+	if node.next != nil && bytes.Compare(node.next.key, key) != 0 {
 		panic("key not found")
 	}
 
@@ -147,18 +145,18 @@ func (s *SkipList) SearchBeforeNodes(key int) []*Node {
 	return nodes
 }
 
-func (s *SkipList) Remove(key int) {
+func (s *SkipList) Remove(key []byte) {
 	nodes := s.SearchBeforeNodes(key)
 
 	for _, node := range nodes {
-		if node.next != nil && node.next.key == key {
+		if node.next != nil && bytes.Compare(node.next.key, key) == 0 {
 			node.next = node.next.next
 		}
 		s.size--
 	}
 }
 
-func (s *SkipList) Create(key int, value []byte, timestamp int64, tombstone bool) {
+/*func (s *SkipList) Create(key []byte, value []byte, timestamp int64, tombstone bool) {
 	entry := memtable.MemtableEntry{
 		Key:       key,
 		Value:     value,
@@ -167,9 +165,9 @@ func (s *SkipList) Create(key int, value []byte, timestamp int64, tombstone bool
 	}
 	serialized := serializeEntry(entry)
 	s.Add(key, serialized)
-}
+}*/
 
-func (s *SkipList) Read(key int) (*memtable.MemtableEntry, bool) {
+func (s *SkipList) Read(key []byte) (*memtable.MemtableEntry, bool) {
 	value := s.Search(key)
 	if value == nil {
 		return nil, false
@@ -184,7 +182,7 @@ func (s *SkipList) Read(key int) (*memtable.MemtableEntry, bool) {
 	return &entry, true
 }
 
-func (s *SkipList) Delete(key int) {
+func (s *SkipList) Delete(key []byte) {
 	entry, found := s.Read(key)
 	if !found {
 		return
@@ -195,7 +193,8 @@ func (s *SkipList) Delete(key int) {
 	s.Add(key, serialized)
 
 }
-func (s *SkipList) Update(key int, value []byte) {
+
+/*func (s *SkipList) Update(key []byte, value []byte) {
 	entry, found := s.Read(key)
 	if !found {
 		s.Create(key, value, time.Now().UnixNano(), false)
@@ -206,7 +205,7 @@ func (s *SkipList) Update(key int, value []byte) {
 	entry.Timestamp = time.Now().UnixNano()
 	serialized := serializeEntry(*entry)
 	s.Add(key, serialized)
-}
+}*/
 
 func serializeEntry(entry memtable.MemtableEntry) []byte {
 	buf := new(bytes.Buffer)
@@ -232,7 +231,7 @@ func deserializeEntry(data []byte) memtable.MemtableEntry {
 }
 
 func (s *SkipList) Clear() {
-	root := Node{key: math.MinInt}
+	root := Node{}
 	node := &root
 
 	for i := 0; i < s.maxHeight; i++ {
