@@ -37,7 +37,7 @@ func (m *Memtable) Create(key int, value []byte) {
 }
 
 func (m *Memtable) Update(key int, value []byte) {
-	m.structure.Create(key, value, time.Now().UnixNano(), false)
+	m.structure.Update(key, value)
 }
 
 func (m *Memtable) Delete(key int) {

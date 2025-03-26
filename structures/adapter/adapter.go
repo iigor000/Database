@@ -14,6 +14,7 @@ type MemtableEntry struct {
 type MemtableStructure interface {
 	Create(key int, value []byte, timestamp int64, tombstone bool)
 	Read(key int) (*MemtableEntry, bool)
+	Update(key int, value []byte)
 	Delete(key int)
 	Clear()
 }

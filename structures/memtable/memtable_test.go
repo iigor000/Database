@@ -36,6 +36,11 @@ func TestMemtableCRUD(t *testing.T) {
 	if !found || string(value) != "twelve" {
 		t.Error("Expected twelve")
 	}
+	m.Update(1, []byte("newone"))
+	value, found = m.Read(1)
+	if !found || string(value) != "newone" {
+		t.Error("Expected newone")
+	}
 
 	m.Delete(4)
 	value, found = m.Read(4)

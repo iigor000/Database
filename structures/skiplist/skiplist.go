@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"math"
 	"math/rand"
+	"time"
 
 	memtable "github.com/iigor000/database/structures/adapter"
 )
@@ -48,7 +49,7 @@ func MakeSkipList(maxHeight int) *SkipList {
 	return &SkipList{maxHeight: maxHeight, root: &root, size: maxHeight}
 }
 
-func (s *SkipList) Update(key int, value []byte) {
+func (s *SkipList) Update1(key int, value []byte) {
 	nodes := s.SearchNodes(key)
 	for _, node := range nodes {
 		if node.next != nil && node.next.key == key {
@@ -193,6 +194,18 @@ func (s *SkipList) Delete(key int) {
 	serialized := serializeEntry(*entry)
 	s.Add(key, serialized)
 
+}
+func (s *SkipList) Update(key int, value []byte) {
+	entry, found := s.Read(key)
+	if !found {
+		s.Create(key, value, time.Now().UnixNano(), false)
+		return
+	}
+	s.Remove(key)
+	entry.Value = value
+	entry.Timestamp = time.Now().UnixNano()
+	serialized := serializeEntry(*entry)
+	s.Add(key, serialized)
 }
 
 func serializeEntry(entry memtable.MemtableEntry) []byte {
