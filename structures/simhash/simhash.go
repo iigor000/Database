@@ -38,7 +38,7 @@ func SimHash(data string) []byte {
 
 	hashes := make(map[string][]byte)
 
-	for token, _ := range m {
+	for token := range m {
 		hashes[token] = Hash([]byte(token))
 	}
 
