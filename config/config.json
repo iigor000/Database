@@ -2,5 +2,5 @@
     "block_size": 4096,
     "cache_capacity": 100,
     "wal_segment_size": 10,
-    "directory": "data"
+    "directory": "data/wal"
 }
