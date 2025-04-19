@@ -12,7 +12,7 @@ type CacheItem struct {
 
 // Struktura koja predstavlja keš
 type Cache struct {
-	Capacity int                   // TODO definisati cache cap u config
+	Capacity int                   // Kapacitet keš memorije
 	Items    map[int]*list.Element // Heš mapa koja čuva ključeve i pokazivače na elemente u kešu
 	List     *list.List            // Lista koja čuva elemente u redosledu pristupa
 	Mu       sync.Mutex
