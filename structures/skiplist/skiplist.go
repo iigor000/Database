@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"math/rand"
+	"time"
 
 	memtable "github.com/iigor000/database/structures/adapter"
 )
@@ -56,7 +57,7 @@ func (s *SkipList) Update1(key []byte, value []byte) {
 	}
 }
 
-func (s *SkipList) Search(value []byte) []byte {
+func (s *SkipList) Search1(value []byte) []byte {
 	node := s.root
 
 	for bytes.Compare(node.key, value) != 0 {
@@ -156,7 +157,7 @@ func (s *SkipList) Remove(key []byte) {
 	}
 }
 
-/*func (s *SkipList) Create(key []byte, value []byte, timestamp int64, tombstone bool) {
+func (s *SkipList) Create(key []byte, value []byte, timestamp int64, tombstone bool) {
 	entry := memtable.MemtableEntry{
 		Key:       key,
 		Value:     value,
@@ -165,10 +166,11 @@ func (s *SkipList) Remove(key []byte) {
 	}
 	serialized := serializeEntry(entry)
 	s.Add(key, serialized)
-}*/
+}
 
-func (s *SkipList) Read(key []byte) (*memtable.MemtableEntry, bool) {
-	value := s.Search(key)
+func (s *SkipList) Search(key []byte) (*memtable.MemtableEntry, bool) {
+	value := s.Search1(key)
+	//fmt.Println("Search result:", value)
 	if value == nil {
 		return nil, false
 	}
@@ -183,7 +185,7 @@ func (s *SkipList) Read(key []byte) (*memtable.MemtableEntry, bool) {
 }
 
 func (s *SkipList) Delete(key []byte) {
-	entry, found := s.Read(key)
+	entry, found := s.Search(key)
 	if !found {
 		return
 	}
@@ -194,23 +196,27 @@ func (s *SkipList) Delete(key []byte) {
 
 }
 
-/*func (s *SkipList) Update(key []byte, value []byte) {
-	entry, found := s.Read(key)
+func (s *SkipList) Update(key []byte, value []byte, timestamp int64, tombstone bool) {
+	entry, found := s.Search(key)
 	if !found {
 		s.Create(key, value, time.Now().UnixNano(), false)
 		return
 	}
 	s.Remove(key)
 	entry.Value = value
-	entry.Timestamp = time.Now().UnixNano()
+	entry.Timestamp = timestamp
+	entry.Tombstone = tombstone
 	serialized := serializeEntry(*entry)
 	s.Add(key, serialized)
-}*/
+}
 
 func serializeEntry(entry memtable.MemtableEntry) []byte {
 	buf := new(bytes.Buffer)
-	binary.Write(buf, binary.BigEndian, entry.Key)
-	binary.Write(buf, binary.BigEndian, int64(len(entry.Value)))
+	var keyLen int64 = int64(len(entry.Key))
+	binary.Write(buf, binary.BigEndian, keyLen)
+	buf.Write(entry.Key)
+	var valueLen int64 = int64(len(entry.Value))
+	binary.Write(buf, binary.BigEndian, valueLen)
 	buf.Write(entry.Value)
 	binary.Write(buf, binary.BigEndian, entry.Timestamp)
 	binary.Write(buf, binary.BigEndian, entry.Tombstone)
@@ -219,15 +225,24 @@ func serializeEntry(entry memtable.MemtableEntry) []byte {
 
 func deserializeEntry(data []byte) memtable.MemtableEntry {
 	buf := bytes.NewReader(data)
-	entry := memtable.MemtableEntry{}
-	binary.Read(buf, binary.BigEndian, &entry.Key)
+	var keyLen int64
+	binary.Read(buf, binary.BigEndian, &keyLen)
+	key := make([]byte, keyLen)
+	binary.Read(buf, binary.BigEndian, &key)
 	var valueLen int64
 	binary.Read(buf, binary.BigEndian, &valueLen)
-	entry.Value = make([]byte, valueLen)
-	buf.Read(entry.Value)
-	binary.Read(buf, binary.BigEndian, &entry.Timestamp)
-	binary.Read(buf, binary.BigEndian, &entry.Tombstone)
-	return entry
+	value := make([]byte, valueLen)
+	binary.Read(buf, binary.BigEndian, &value)
+	var timestamp int64
+	binary.Read(buf, binary.BigEndian, &timestamp)
+	var tombstone bool
+	binary.Read(buf, binary.BigEndian, &tombstone)
+	return memtable.MemtableEntry{
+		Key:       key,
+		Value:     value,
+		Timestamp: timestamp,
+		Tombstone: tombstone,
+	}
 }
 
 func (s *SkipList) Clear() {

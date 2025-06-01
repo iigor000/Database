@@ -2,7 +2,6 @@ package memtable
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/iigor000/database/structures/adapter"
 	"github.com/iigor000/database/structures/skiplist"
@@ -13,6 +12,7 @@ type Memtable struct {
 	structure adapter.MemtableStructure
 	size      int
 	capacity  int
+	keys      [][]byte
 }
 
 // Konstruktor za Memtable strukturu, opcija za implementaciju skip listom ili binarnim stablom
@@ -27,25 +27,22 @@ func NewMemtable(useSkipList bool, maxHeight int, n int) *Memtable {
 }
 
 // CRUD operacije
-func (m *Memtable) Create(key int, value []byte) {
-	if m.size >= m.capacity {
-		m.FlushToDisk()
-		m.size = 0
+// Update dodaje ili azurira na osnovu kljuca u Memtable
+func (m *Memtable) Update(key []byte, value []byte, timestamp int64, tombstone bool) {
+	_, exist := m.Search(key)
+	if !exist {
+		m.keys = append(m.keys, key)
 	}
-	m.structure.Create(key, value, time.Now().UnixNano(), false)
-	m.size++
+	m.structure.Update(key, value, timestamp, tombstone)
+
 }
 
-func (m *Memtable) Update(key int, value []byte) {
-	m.structure.Update(key, value)
-}
-
-func (m *Memtable) Delete(key int) {
+func (m *Memtable) Delete(key []byte) {
 	m.structure.Delete(key)
 }
 
-func (m *Memtable) Read(key int) ([]byte, bool) {
-	entry, found := m.structure.Read(key)
+func (m *Memtable) Search(key []byte) ([]byte, bool) {
+	entry, found := m.structure.Search(key)
 	if !found || entry.Tombstone {
 		return nil, false
 	}
@@ -53,10 +50,12 @@ func (m *Memtable) Read(key int) ([]byte, bool) {
 }
 
 func (m *Memtable) Print() {
-	for i := 0; i < 100; i++ {
-		entry, found := m.structure.Read(i)
+	for _, key := range m.keys {
+		entry, found := m.structure.Search(key)
 		if found {
-			println(i, string(entry.Value))
+			if !entry.Tombstone {
+				fmt.Printf("Key: %s, Value: %s\n", key, entry.Value)
+			}
 		}
 	}
 }

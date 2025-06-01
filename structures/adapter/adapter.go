@@ -5,16 +5,15 @@ package adapter
 // MemtableStructure - interfejs koji definiše osnovne operacije nad memtable strukturom
 
 type MemtableEntry struct {
-	Key       int
+	Key       []byte
 	Value     []byte
 	Timestamp int64
 	Tombstone bool
 }
 
 type MemtableStructure interface {
-	Create(key int, value []byte, timestamp int64, tombstone bool)
-	Read(key int) (*MemtableEntry, bool)
-	Update(key int, value []byte)
-	Delete(key int)
+	Update(key []byte, value []byte, timestamp int64, tombstone bool)
+	Search(key []byte) (*MemtableEntry, bool)
+	Delete(key []byte)
 	Clear()
 }
