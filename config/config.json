@@ -14,5 +14,8 @@
   },
   "skiplist": {
     "max_height": 16
+  },
+  "cache": {
+    "capacity": 100
   }
 }

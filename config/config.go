@@ -13,6 +13,7 @@ type Config struct {
 	Wal      WalConfig      `json:"wal"`      // Konfiguracija WAL-a
 	Memtable MemtableConfig `json:"memtable"` // Konfiguracija memtable-a
 	Skiplist SkiplistConfig `json:"skiplist"` // Konfiguracija skip liste
+	Cache    CacheConfig    `json:"cache"`    // Konfiguracija kes memorije
 }
 
 type BlockConfig struct {
@@ -33,6 +34,10 @@ type MemtableConfig struct {
 
 type SkiplistConfig struct {
 	MaxHeight int `json:"max_height"` // Maksimalna visina skip liste
+}
+
+type CacheConfig struct {
+	Capacity int `json:"capacity"` // Kapacitet kes memorije
 }
 
 func LoadConfigFile(path string) (*Config, error) {

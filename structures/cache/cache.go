@@ -3,6 +3,8 @@ package cache
 import (
 	"container/list"
 	"sync"
+
+	"github.com/iigor000/database/config"
 )
 
 type CacheItem struct {
@@ -19,12 +21,12 @@ type Cache struct {
 }
 
 // Funkcija za kreiranje novog keša
-func NewCache(capacity int) *Cache {
+func NewCache(config config.Config) (*Cache, error) {
 	return &Cache{
-		Capacity: capacity,
+		Capacity: config.Cache.Capacity,
 		Items:    make(map[int]*list.Element),
 		List:     list.New(),
-	}
+	}, nil
 }
 
 // Funkcija za dobijanje vrednosti iz keša na osnovu ključa

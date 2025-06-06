@@ -2,12 +2,17 @@ package cache
 
 import (
 	"testing"
+
+	"github.com/iigor000/database/config"
 )
 
 // TestCache testira Put i Get funkcionalnosti kesiranja
 // i izbacivanje najstarijeg elementa kad se dostigne kapacitet
 func TestCache(t *testing.T) {
-	cache := NewCache(2) // Kapacitet keša je 2
+	cache, err := NewCache(config.Config{Cache: config.CacheConfig{Capacity: 2}}) // Kapacitet keša je 2
+	if err != nil {
+		t.Fatalf("Failed to create cache: %v", err)
+	}
 
 	// Dodajemo dva elementa u keš
 	cache.Put(1, []byte("value1"))
