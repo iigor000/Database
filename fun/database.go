@@ -20,10 +20,7 @@ type Database struct {
 }
 
 func NewDatabase(config config.Config) (*Database, error) {
-	memtables, err := memtable.NewMemtables(config)
-	if err != nil {
-		return nil, err
-	}
+	memtables := memtable.NewMemtables(config)
 
 	cache, err := cache.NewCache(config)
 	if err != nil {
