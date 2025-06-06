@@ -3,6 +3,7 @@ package memtable
 import (
 	"fmt"
 
+	"github.com/iigor000/database/config"
 	"github.com/iigor000/database/structures/adapter"
 	"github.com/iigor000/database/structures/skiplist"
 )
@@ -11,18 +12,97 @@ import (
 type Memtables struct {
 	numberOfMemtables int
 	memtables         map[int]*Memtable
+	conf              config.Config
 }
 
 // Konstruktor za Memtables strukturu
-func NewMemtables(nom int, useSkipList bool, maxHeight int, capacity int) *Memtables {
+func NewMemtables(conf config.Config) *Memtables {
 	memtables := make(map[int]*Memtable)
-	for i := 0; i < nom; i++ {
-		memtables[i] = NewMemtable(useSkipList, maxHeight, capacity)
+	if conf.Memtable.Structure == "skiplist" {
+		for i := 0; i < conf.Memtable.NumberOfMemtables; i++ {
+			memtables[i] = NewMemtable(true, conf.Skiplist.MaxHeight, conf.Memtable.NumberOfEntries)
+		}
+	} else {
+		for i := 0; i < conf.Memtable.NumberOfMemtables; i++ {
+			memtables[i] = NewMemtable(false, 0, conf.Memtable.NumberOfEntries)
+		}
 	}
 	return &Memtables{
-		numberOfMemtables: nom,
+		numberOfMemtables: conf.Memtable.NumberOfMemtables,
 		memtables:         memtables,
+		conf:              conf,
 	}
+}
+
+// CRUD operacije
+// Update dodaje ili azurira na osnovu kljuca u Memtables
+func (m *Memtables) Update(key []byte, value []byte, timestamp int64, tombstone bool) {
+	// Prolazimo kroz sve Memtable i azuriramo
+	firstNotFull := -1
+	// Trazimo Memtable koji sadrzi dati kljuc i uaput proveravamo koji je prvi koji nije pun
+	// Ako ne nadjemo, onda cemo ga dodati u prvi koji nije pun
+	for i := 0; i < m.numberOfMemtables; i++ {
+		memtable := m.memtables[i]
+		// Proveravamo da li postoji dati kljuc
+		_, exist := memtable.Search(key)
+		if exist {
+			// Ako postoji, azuriramo vrednost
+			memtable.Update(key, value, timestamp, tombstone)
+			return
+		} else {
+			if firstNotFull == -1 && memtable.size < memtable.capacity {
+				firstNotFull = i
+			}
+		}
+	}
+	// Ako nismo nasli Memtable koji sadrzi dati kljuc, a imamo prvi koji nije pun, onda ga azuriramo
+	if firstNotFull != -1 {
+		m.memtables[firstNotFull].Update(key, value, timestamp, tombstone)
+	}
+	if firstNotFull == m.numberOfMemtables-1 {
+		if m.memtables[firstNotFull].size >= m.memtables[firstNotFull].capacity {
+			// Ako je poslednji Memtable pun, onda ga flush-ujemo na disk
+			m.memtables[0].FlushToDisk()
+			// Resetujemo redosled Memtable-a
+			for j := 0; j < m.numberOfMemtables-1; j++ {
+				m.memtables[j] = m.memtables[j+1]
+			}
+			// Dodajemo novi Memtable na kraj
+			m.memtables[m.numberOfMemtables-1] = NewMemtable(m.conf.Memtable.Structure == "skiplist", m.conf.Skiplist.MaxHeight, m.conf.Memtable.NumberOfEntries)
+		}
+	}
+
+}
+
+// Delete uklanja kljuc iz Memtables
+func (m *Memtables) Delete(key []byte) {
+	// Prolazimo kroz sve Memtable i brisemo
+	for i := 0; i < m.numberOfMemtables; i++ {
+		memtable := m.memtables[i]
+		// Proveravamo da li postoji dati kljuc
+		_, exist := memtable.Search(key)
+		if exist {
+			// Ako postoji, brisemo ga
+			memtable.Delete(key)
+			return
+		}
+	}
+}
+
+// Search trazi kljuc u Memtables
+func (m *Memtables) Search(key []byte) ([]byte, bool) {
+	// Prolazimo kroz sve Memtable i trazimo
+	for i := 0; i < m.numberOfMemtables; i++ {
+		memtable := m.memtables[i]
+		// Proveravamo da li postoji dati kljuc
+		value, exist := memtable.Search(key)
+		if exist {
+			// Ako postoji, vracamo vrednost
+			return value, true
+		}
+	}
+	// Ako nismo nasli kljuc, vracamo false
+	return nil, false
 }
 
 // Memtable struktura
@@ -50,6 +130,7 @@ func (m *Memtable) Update(key []byte, value []byte, timestamp int64, tombstone b
 	_, exist := m.Search(key)
 	if !exist {
 		m.keys = append(m.keys, key)
+		m.size++
 	}
 	m.structure.Update(key, value, timestamp, tombstone)
 
