@@ -22,12 +22,12 @@ type cacheData struct {
 	block []byte
 }
 
-func NewBlockCache(cfg config.BlockConfig) *BlockCache {
+func NewBlockCache(cfg config.Config) *BlockCache {
 	return &BlockCache{
-		capacity:  cfg.CacheCapacity,
+		capacity:  cfg.Block.CacheCapacity,
 		cache:     make(map[string]*list.Element),
 		list:      list.New(),
-		blockSize: cfg.BlockSize,
+		blockSize: cfg.Block.BlockSize,
 	}
 }
 

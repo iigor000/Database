@@ -14,9 +14,9 @@ type BlockManager struct {
 	mu        sync.Mutex
 }
 
-func NewBlockManager(cfg *config.BlockConfig) *BlockManager {
+func NewBlockManager(cfg *config.Config) *BlockManager {
 	return &BlockManager{
-		BlockSize: cfg.BlockSize,
+		BlockSize: cfg.Block.BlockSize,
 	}
 }
 

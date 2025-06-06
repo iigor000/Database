@@ -19,15 +19,17 @@ func TestBlockManagerWriteRead(t *testing.T) {
 	defer os.RemoveAll(tempDir)
 
 	// Def konfiguracija
-	cfg := config.BlockConfig{
-		BlockSize:     1024, // 1 KB blokovi
-		CacheCapacity: 10,
+	cfg := config.Config{
+		Block: config.BlockConfig{
+			BlockSize:     1024, // 1 KB blokovi
+			CacheCapacity: 10,
+		},
 	}
 	bm := NewBlockManager(&cfg)
 
 	filePath := filepath.Join(tempDir, "testfile.dat")
 
-	writeData := bytes.Repeat([]byte{0xAB}, cfg.BlockSize)
+	writeData := bytes.Repeat([]byte{0xAB}, cfg.Block.BlockSize)
 	blockNumber := 0
 	// Upisujemo blok
 	if err := bm.WriteBlock(filePath, blockNumber, writeData); err != nil {
@@ -50,9 +52,11 @@ func TestBlockManagerWriteRead(t *testing.T) {
 // i getovanje blokova kao i izbacivanje najstarijeg elementa kad se dostigne kapacitet
 func TestBlockCache(t *testing.T) {
 	// Konfiguracija sa malim kapacitetom za test (npr. kapacitet 2)
-	cfg := config.BlockConfig{
-		BlockSize:     512,
-		CacheCapacity: 2,
+	cfg := config.Config{
+		Block: config.BlockConfig{
+			BlockSize:     512,
+			CacheCapacity: 2,
+		},
 	}
 	bc := NewBlockCache(cfg)
 
@@ -94,9 +98,11 @@ func TestCachedBlockManager(t *testing.T) {
 	filePath := filepath.Join(tempDir, "testfile.dat")
 
 	// Konfiguracija za test
-	cfg := config.BlockConfig{
-		BlockSize:     1024,
-		CacheCapacity: 10,
+	cfg := config.Config{
+		Block: config.BlockConfig{
+			BlockSize:     1024,
+			CacheCapacity: 10,
+		},
 	}
 	// Kreiramo BlockManager i BlockCache
 	bm := NewBlockManager(&cfg)
@@ -107,7 +113,7 @@ func TestCachedBlockManager(t *testing.T) {
 	}
 
 	// Pripremamo podatke koje cemo upisati
-	writeData := bytes.Repeat([]byte{0xCD}, cfg.BlockSize)
+	writeData := bytes.Repeat([]byte{0xCD}, cfg.Block.BlockSize)
 	blockNumber := 0
 
 	// Prvo, upisujemo blok preko CachedBlockManager-a
@@ -125,7 +131,7 @@ func TestCachedBlockManager(t *testing.T) {
 	}
 
 	// Modifikujemo fajl direktno (simuliramo promenu na disku)
-	modifiedData := bytes.Repeat([]byte{0xEF}, cfg.BlockSize)
+	modifiedData := bytes.Repeat([]byte{0xEF}, cfg.Block.BlockSize)
 	if err := bm.WriteBlock(filePath, blockNumber, modifiedData); err != nil {
 		t.Fatalf("Direct BlockManager WriteBlock failed: %v", err)
 	}
