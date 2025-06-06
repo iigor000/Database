@@ -7,6 +7,24 @@ import (
 	"github.com/iigor000/database/structures/skiplist"
 )
 
+// Memtables struktura koja sadrzi vise Memtable-a
+type Memtables struct {
+	numberOfMemtables int
+	memtables         map[int]*Memtable
+}
+
+// Konstruktor za Memtables strukturu
+func NewMemtables(nom int, useSkipList bool, maxHeight int, capacity int) *Memtables {
+	memtables := make(map[int]*Memtable)
+	for i := 0; i < nom; i++ {
+		memtables[i] = NewMemtable(useSkipList, maxHeight, capacity)
+	}
+	return &Memtables{
+		numberOfMemtables: nom,
+		memtables:         memtables,
+	}
+}
+
 // Memtable struktura
 type Memtable struct {
 	structure adapter.MemtableStructure
