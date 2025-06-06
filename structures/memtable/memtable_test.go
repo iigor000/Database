@@ -3,6 +3,8 @@ package memtable
 import (
 	"fmt"
 	"testing"
+
+	"github.com/iigor000/database/config"
 )
 
 func TestMemtableCRUD(t *testing.T) {
@@ -74,15 +76,109 @@ func TestMemtableCRUD(t *testing.T) {
 	m.Print()
 }
 
-func TestMemtableFlush(t *testing.T) {
-	m := NewMemtable(true, 3, 7)
-	m.Update([]byte("1"), []byte("one"), 1, false)
-	m.Update([]byte("2"), []byte("two"), 2, false)
-	m.Update([]byte("3"), []byte("three"), 3, false)
-	m.Update([]byte("4"), []byte("four"), 4, false)
-	m.Update([]byte("5"), []byte("five"), 5, false)
-	m.Update([]byte("6"), []byte("six"), 6, false)
-	m.Update([]byte("7"), []byte("seven"), 7, false)
-	m.FlushToDisk()
+func TestMemtables(t *testing.T) {
+	cf := config.Config{Memtable: config.MemtableConfig{
+		NumberOfMemtables: 2,
+		NumberOfEntries:   5,
+		Structure:         "skiplist",
+	},
+		Skiplist: config.SkiplistConfig{
+			MaxHeight: 3},
+	}
+	ms := NewMemtables(cf)
+	for i := 0; i < cf.Memtable.NumberOfMemtables; i++ {
+		fmt.Printf("Memtable %d:\n", i)
+		ms.memtables[i].Print()
+	}
+	fmt.Println("Adding entries to Memtables:")
+	ms.Update([]byte("1"), []byte("one"), 1, false)
+	ms.Update([]byte("2"), []byte("two"), 2, false)
+	ms.Update([]byte("3"), []byte("three"), 3, false)
+	ms.Update([]byte("4"), []byte("four"), 4, false)
+	ms.Update([]byte("5"), []byte("five"), 5, false)
+	ms.Update([]byte("6"), []byte("six"), 6, false)
+	ms.Update([]byte("7"), []byte("seven"), 7, false)
+	ms.Update([]byte("8"), []byte("eight"), 8, false)
+	for i := 0; i < cf.Memtable.NumberOfMemtables; i++ {
+		fmt.Printf("Memtable %d after updates:\n", i)
+		ms.memtables[i].Print()
+	}
+	fmt.Println("Updating keys in Memtables:")
+	ms.Update([]byte("1"), []byte("newone"), 10, false)
+	ms.Update([]byte("2"), []byte("newtwo"), 11, false)
+	ms.Update([]byte("3"), []byte("newthree"), 12, false)
+	ms.Update([]byte("4"), []byte("newfour"), 13, false)
+	ms.Update([]byte("5"), []byte("newfive"), 14, false)
+	ms.Update([]byte("6"), []byte("newsix"), 15, false)
+	ms.Update([]byte("7"), []byte("newseven"), 16, false)
+	ms.Update([]byte("8"), []byte("neweight"), 17, false)
+	for i := 0; i < cf.Memtable.NumberOfMemtables; i++ {
+		fmt.Printf("Memtable %d after updates:\n", i)
+		ms.memtables[i].Print()
+	}
+	fmt.Println("Searching keys in Memtables:")
+	value, found := ms.Search([]byte("1"))
+	if !found {
+		t.Error("Expected to find key 1")
+	} else if string(value) != "newone" {
+		t.Error("Expected value 'newone' for key 1, got", string(value))
+	}
+	value, found = ms.Search([]byte("2"))
+	if !found {
+		t.Error("Expected to find key 2")
+	}
+	if string(value) != "newtwo" {
+		t.Error("Expected value 'newtwo' for key 2, got", string(value))
+	}
+	fmt.Println("Deleting keys from Memtables:")
+	ms.Delete([]byte("1"))
+	_, found = ms.Search([]byte("1"))
+	if found {
+		t.Error("Expected not found for deleted key 1")
+	}
+	ms.Delete([]byte("2"))
+	_, found = ms.Search([]byte("2"))
+	if found {
+		t.Error("Expected not found for deleted key 2")
+	}
+	ms.Delete([]byte("3"))
+	_, found = ms.Search([]byte("3"))
+	if found {
+		t.Error("Expected not found for deleted key 3")
+	}
+	fmt.Println("Memtables contents after CRUD operations:")
+	for i := 0; i < cf.Memtable.NumberOfMemtables; i++ {
+		fmt.Printf("Memtable %d:\n", i)
+		ms.memtables[i].Print()
+	}
 
+}
+
+// Flush Memtables to disk
+func TestFlushMemtables(t *testing.T) {
+	cf := config.Config{Memtable: config.MemtableConfig{
+		NumberOfMemtables: 2,
+		NumberOfEntries:   2,
+		Structure:         "skiplist",
+	},
+		Skiplist: config.SkiplistConfig{
+			MaxHeight: 3},
+	}
+	ms := NewMemtables(cf)
+	// Add some entries to Memtables
+	ms.Update([]byte("1"), []byte("one"), 1, false)
+	ms.Update([]byte("2"), []byte("two"), 2, false)
+	ms.Update([]byte("3"), []byte("three"), 3, false)
+	// Print Memtables before flush
+	for i := 0; i < cf.Memtable.NumberOfMemtables; i++ {
+		fmt.Printf("Memtable %d before flush:\n", i)
+		ms.memtables[i].Print()
+	}
+	ms.Update([]byte("4"), []byte("four"), 4, false)
+	ms.Update([]byte("5"), []byte("five"), 5, false)
+	// Print Memtables after flush
+	for i := 0; i < cf.Memtable.NumberOfMemtables; i++ {
+		fmt.Printf("Memtable %d after flush:\n", i)
+		ms.memtables[i].Print()
+	}
 }
