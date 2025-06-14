@@ -59,6 +59,28 @@ func (bm *BlockManager) WriteBlock(filePath string, blockNumber int, data []byte
 	return err
 }
 
+// Funkcija koja dodaje blok podataka na kraj fajla i vraca broj bloka
+func (bm *BlockManager) AppendBlock(filePath string, data []byte) (int, error) {
+	bm.mu.Lock()
+	defer bm.mu.Unlock()
+
+	file, err := os.OpenFile(filePath, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0644)
+	if err != nil {
+		return 0, err
+	}
+	defer file.Close()
+	offset, err := file.Seek(0, os.SEEK_END) // Pozicioniramo se na kraj fajla
+	if err != nil {
+		return 0, err
+	}
+	_, err = file.Write(data) // Upisujemo podatke na kraj fajla
+	if err != nil {
+		return 0, err
+	}
+	blockNumber := int(offset / int64(bm.BlockSize)) // Izracunavamo broj bloka na osnovu offseta
+	return blockNumber, nil // Vracamo broj bloka i potencijalnu gresku
+}
+ 
 // INTEGRACIJA BLOCK MANAGERA I BLOCK CACHEA
 
 // CachedBlockManager je struktura koja omogucava citanje i pisanje blokova podataka sa kesiranjem
@@ -89,4 +111,16 @@ func (cbm *CachedBlockManager) WriteBlock(filePath string, blockNumber int, data
 	cacheKey := fmt.Sprintf("%s:%d", filePath, blockNumber)
 	cbm.C.Put(cacheKey, data)
 	return cbm.BM.WriteBlock(filePath, blockNumber, data)
+}
+
+// Funkcija koja omogucava optimizovano dodavanje blokova podataka uz pomoc kesiranja cime se ubrzava sam proces
+func (cbm *CachedBlockManager) AppendBlock(filePath string, data []byte) (int, error) {
+	blockNumber, err := cbm.BM.AppendBlock(filePath, data)
+	if err != nil {
+		return 0, err
+	}
+
+	cacheKey := fmt.Sprintf("%s:%d", filePath, blockNumber)
+	cbm.C.Put(cacheKey, data) // Stavljamo podatke u kes
+	return blockNumber, nil
 }
