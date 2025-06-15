@@ -13,6 +13,7 @@ type Config struct {
 	Wal      WalConfig      `json:"wal"`      // Konfiguracija WAL-a
 	Memtable MemtableConfig `json:"memtable"` // Konfiguracija memtable-a
 	Skiplist SkiplistConfig `json:"skiplist"` // Konfiguracija skip liste
+	SSTable  SSTableConfig  `json:"sstable"`  // Konfiguracija SSTable-a
 }
 
 type BlockConfig struct {
@@ -35,6 +36,13 @@ type SkiplistConfig struct {
 	MaxHeight int `json:"max_height"` // Maksimalna visina skip liste
 }
 
+type SSTableConfig struct {
+	UseCompression   bool   `json:"use_compression"` // Kompresija SSTable-a true ili false
+	IndexLevel       int    `json:"index_level"`     // Velicina index bloka u bajtovima
+	SummaryLevel     int    `json:"summary_level"`   // Velicina filter bloka u bajtovima
+	SstableDirectory string `json:"directory"`       // Direktorijum u kome se cuvaju SSTable-ovi
+}
+
 func LoadConfigFile(path string) (*Config, error) {
 	defaultConfig := &Config{
 		Block: BlockConfig{
@@ -52,6 +60,12 @@ func LoadConfigFile(path string) (*Config, error) {
 		},
 		Skiplist: SkiplistConfig{
 			MaxHeight: 16,
+		},
+		SSTable: SSTableConfig{
+			UseCompression:   true,
+			IndexLevel:       5,
+			SummaryLevel:     10,
+			SstableDirectory: "data/sstable",
 		},
 	}
 	file, err := os.Open(path)

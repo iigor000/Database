@@ -10,7 +10,7 @@ import (
 func TestMemtableCRUD(t *testing.T) {
 	m := NewMemtable(true, 3, 9)
 	// Test initial state
-	if len(m.keys) != 0 {
+	if len(m.Keys) != 0 {
 		t.Error("Expected empty Memtable at initialization")
 	}
 	// Test Update and Search
@@ -85,7 +85,7 @@ func TestMemtables(t *testing.T) {
 		Skiplist: config.SkiplistConfig{
 			MaxHeight: 3},
 	}
-	ms := NewMemtables(cf)
+	ms := NewMemtables(&cf)
 	for i := 0; i < cf.Memtable.NumberOfMemtables; i++ {
 		fmt.Printf("Memtable %d:\n", i)
 		ms.memtables[i].Print()
@@ -164,7 +164,7 @@ func TestFlushMemtables(t *testing.T) {
 		Skiplist: config.SkiplistConfig{
 			MaxHeight: 3},
 	}
-	ms := NewMemtables(cf)
+	ms := NewMemtables(&cf)
 	// Add some entries to Memtables
 	ms.Update([]byte("1"), []byte("one"), 1, false)
 	ms.Update([]byte("2"), []byte("two"), 2, false)
