@@ -2,6 +2,7 @@ package block_organization
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"sync"
 
@@ -47,6 +48,16 @@ func (bm *BlockManager) WriteBlock(filePath string, blockNumber int, data []byte
 	bm.mu.Lock()
 	defer bm.mu.Unlock()
 
+	// Proveravamo da li je duzina podataka veca od BlockSize
+	if len(data) > bm.BlockSize {
+		return fmt.Errorf("data size exceeds block size: %d > %d", len(data), bm.BlockSize)
+	}
+	// Ako jeste, onda bacamo gresku jer ne mozemo da upisemo vise podataka nego sto je dozvoljeno
+	if len(data) < bm.BlockSize {
+		// Ako je duzina manja, onda popunjavamo ostatak bloka nulama
+		data = append(data, make([]byte, bm.BlockSize-len(data))...)
+	}
+
 	// Po principu kao kod citanja, izracunamo gde je pocetak bloka i upisemo podatke na tu poziciju
 	file, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE, 0644)
 	if err != nil {
@@ -64,12 +75,22 @@ func (bm *BlockManager) AppendBlock(filePath string, data []byte) (int, error) {
 	bm.mu.Lock()
 	defer bm.mu.Unlock()
 
+	// Proveravamo da li je duzina podataka veca od BlockSize
+	if len(data) > bm.BlockSize {
+		return 0, fmt.Errorf("data size exceeds block size: %d > %d", len(data), bm.BlockSize)
+	}
+	// Ako jeste, onda bacamo gresku jer ne mozemo da upisemo vise podataka nego sto je dozvoljeno
+	if len(data) < bm.BlockSize {
+		// Ako je duzina manja, onda popunjavamo ostatak bloka nulama
+		data = append(data, make([]byte, bm.BlockSize-len(data))...)
+	}
+
 	file, err := os.OpenFile(filePath, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0644)
 	if err != nil {
 		return 0, err
 	}
 	defer file.Close()
-	offset, err := file.Seek(0, os.SEEK_END) // Pozicioniramo se na kraj fajla
+	offset, err := file.Seek(0, io.SeekEnd) // Pozicioniramo se na kraj fajla
 	if err != nil {
 		return 0, err
 	}
@@ -78,9 +99,9 @@ func (bm *BlockManager) AppendBlock(filePath string, data []byte) (int, error) {
 		return 0, err
 	}
 	blockNumber := int(offset / int64(bm.BlockSize)) // Izracunavamo broj bloka na osnovu offseta
-	return blockNumber, nil // Vracamo broj bloka i potencijalnu gresku
+	return blockNumber, nil                          // Vracamo broj bloka i potencijalnu gresku
 }
- 
+
 // INTEGRACIJA BLOCK MANAGERA I BLOCK CACHEA
 
 // CachedBlockManager je struktura koja omogucava citanje i pisanje blokova podataka sa kesiranjem
