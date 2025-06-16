@@ -34,7 +34,8 @@ func TestLoadConfigFile_LoadsValidConfig(t *testing.T) {
 		"block": {"block_size": 8192, "cache_capacity": 200},
 		"wal": {"wal_segment_size": 200, "wal_directory": "wal_dir"},
 		"memtable": {"num": 5, "num_entries": 500, "struct": "tree"},
-		"skiplist": {"max_height": 8}
+		"skiplist": {"max_height": 8},
+		"cache": {"capacity": 1000}
 	}`
 	if _, err := tmpFile.Write([]byte(configJSON)); err != nil {
 		t.Fatalf("failed to write config: %v", err)
@@ -57,6 +58,9 @@ func TestLoadConfigFile_LoadsValidConfig(t *testing.T) {
 	if cfg.Skiplist.MaxHeight != 8 {
 		t.Errorf("expected Skiplist MaxHeight 8, got %d", cfg.Skiplist.MaxHeight)
 	}
+	if cfg.Cache.Capacity != 1000 {
+		t.Errorf("expected Cache Capacity 1000, got %d", cfg.Cache.Capacity)
+	}
 }
 
 func TestLoadConfigFile_InvalidBlockSize(t *testing.T) {
@@ -70,7 +74,8 @@ func TestLoadConfigFile_InvalidBlockSize(t *testing.T) {
 		"block": {"block_size": 1234, "cache_capacity": 200},
 		"wal": {"wal_segment_size": 200, "wal_directory": "wal_dir"},
 		"memtable": {"num": 5, "num_entries": 500, "struct": "tree"},
-		"skiplist": {"max_height": 8}
+		"skiplist": {"max_height": 8},
+		"cache": {"capacity": 1000}
 	}`
 	if _, err := tmpFile.Write([]byte(configJSON)); err != nil {
 		t.Fatalf("failed to write config: %v", err)

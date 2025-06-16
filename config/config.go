@@ -72,6 +72,9 @@ func LoadConfigFile(path string) (*Config, error) {
 			SummaryLevel:     10,
 			SstableDirectory: "data/sstable",
 		},
+		Cache: CacheConfig{
+			Capacity: 100,
+		},
 	}
 	file, err := os.Open(path)
 	if err != nil {

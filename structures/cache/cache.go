@@ -8,15 +8,15 @@ import (
 )
 
 type CacheItem struct {
-	Key   int
+	Key   string
 	Value []byte
 }
 
 // Struktura koja predstavlja keš
 type Cache struct {
-	Capacity int                   // Kapacitet keš memorije
-	Items    map[int]*list.Element // Heš mapa koja čuva ključeve i pokazivače na elemente u kešu
-	List     *list.List            // Lista koja čuva elemente u redosledu pristupa
+	Capacity int                      // Kapacitet keš memorije
+	Items    map[string]*list.Element // Heš mapa koja čuva ključeve i pokazivače na elemente u kešu
+	List     *list.List               // Lista koja čuva elemente u redosledu pristupa
 	Mu       sync.Mutex
 }
 
@@ -24,13 +24,13 @@ type Cache struct {
 func NewCache(config config.Config) (*Cache, error) {
 	return &Cache{
 		Capacity: config.Cache.Capacity,
-		Items:    make(map[int]*list.Element),
+		Items:    make(map[string]*list.Element),
 		List:     list.New(),
 	}, nil
 }
 
 // Funkcija za dobijanje vrednosti iz keša na osnovu ključa
-func (c *Cache) Get(key int) ([]byte, bool) {
+func (c *Cache) Get(key string) ([]byte, bool) {
 	c.Mu.Lock()
 	defer c.Mu.Unlock()
 
@@ -41,7 +41,7 @@ func (c *Cache) Get(key int) ([]byte, bool) {
 	return nil, false // Ako ključ ne postoji, vrati null i false
 }
 
-func (c *Cache) Put(key int, value []byte) {
+func (c *Cache) Put(key string, value []byte) {
 	c.Mu.Lock()
 	defer c.Mu.Unlock()
 

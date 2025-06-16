@@ -15,29 +15,29 @@ func TestCache(t *testing.T) {
 	}
 
 	// Dodajemo dva elementa u keš
-	cache.Put(1, []byte("value1"))
-	cache.Put(2, []byte("value2"))
+	cache.Put("a", []byte("value1"))
+	cache.Put("b", []byte("value2"))
 
 	// Proveravamo da li su elementi ispravno dodati
-	if value, exists := cache.Get(1); !exists || string(value) != "value1" {
+	if value, exists := cache.Get("a"); !exists || string(value) != "value1" {
 		t.Errorf("Expected value1, got %s", string(value))
 	}
-	if value, exists := cache.Get(2); !exists || string(value) != "value2" {
+	if value, exists := cache.Get("b"); !exists || string(value) != "value2" {
 		t.Errorf("Expected value2, got %s", string(value))
 	}
 
-	cache.Put(3, []byte("value3")) // Ovo bi trebalo da izbaci key 1
+	cache.Put("c", []byte("value3")) // Ovo bi trebalo da izbaci key 1
 
-	// Proveravamo da li je key 1 izbačen i da li su ostali ispravni
-	if _, exists := cache.Get(1); exists {
-		t.Errorf("Expected key 1 to be evicted")
+	// Proveravamo da li je ključ 'a' izbačen i da li su ostali ispravni
+	if _, exists := cache.Get("a"); exists {
+		t.Errorf("Expected key 'a' to be evicted")
 	}
 
 	// Proveravamo da li su ostali elementi ispravni
-	if value, exists := cache.Get(2); !exists || string(value) != "value2" {
+	if value, exists := cache.Get("b"); !exists || string(value) != "value2" {
 		t.Errorf("Expected value2, got %s", string(value))
 	}
-	if value, exists := cache.Get(3); !exists || string(value) != "value3" {
+	if value, exists := cache.Get("c"); !exists || string(value) != "value3" {
 		t.Errorf("Expected value3, got %s", string(value))
 	}
 }
