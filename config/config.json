@@ -15,6 +15,12 @@
   "skiplist": {
     "max_height": 16
   },
+  "sstable": {
+    "use_compression": true,
+    "index_level": 5,
+    "summary_level": 10,
+    "directory": "data/sstable"
+  },
   "cache": {
     "capacity": 100
   }

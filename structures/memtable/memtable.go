@@ -12,11 +12,11 @@ import (
 type Memtables struct {
 	numberOfMemtables int
 	memtables         map[int]*Memtable
-	conf              config.Config
+	conf              *config.Config
 }
 
 // Konstruktor za Memtables strukturu
-func NewMemtables(conf config.Config) *Memtables {
+func NewMemtables(conf *config.Config) *Memtables {
 	memtables := make(map[int]*Memtable)
 	if conf.Memtable.Structure == "skiplist" {
 		for i := 0; i < conf.Memtable.NumberOfMemtables; i++ {
@@ -50,7 +50,7 @@ func (m *Memtables) Update(key []byte, value []byte, timestamp int64, tombstone 
 			memtable.Update(key, value, timestamp, tombstone)
 			return
 		} else {
-			if firstNotFull == -1 && memtable.size < memtable.capacity {
+			if firstNotFull == -1 && memtable.Size < memtable.Capacity {
 				firstNotFull = i
 			}
 		}
@@ -60,7 +60,7 @@ func (m *Memtables) Update(key []byte, value []byte, timestamp int64, tombstone 
 		m.memtables[firstNotFull].Update(key, value, timestamp, tombstone)
 	}
 	if firstNotFull == m.numberOfMemtables-1 {
-		if m.memtables[firstNotFull].size >= m.memtables[firstNotFull].capacity {
+		if m.memtables[firstNotFull].Size >= m.memtables[firstNotFull].Capacity {
 			// Ako je poslednji Memtable pun, onda ga flush-ujemo na disk
 			m.memtables[0].FlushToDisk()
 			// Resetujemo redosled Memtable-a
@@ -107,10 +107,10 @@ func (m *Memtables) Search(key []byte) ([]byte, bool) {
 
 // Memtable struktura
 type Memtable struct {
-	structure adapter.MemtableStructure
-	size      int
-	capacity  int
-	keys      [][]byte
+	Structure adapter.MemtableStructure
+	Size      int
+	Capacity  int
+	Keys      [][]byte
 }
 
 // Konstruktor za Memtable strukturu, opcija za implementaciju skip listom ili binarnim stablom
@@ -121,7 +121,7 @@ func NewMemtable(useSkipList bool, maxHeight int, n int) *Memtable {
 	} else {
 		//a = bst.NewBST()
 	}
-	return &Memtable{structure: struc, size: 0, capacity: n}
+	return &Memtable{Structure: struc, Size: 0, Capacity: n}
 }
 
 // CRUD operacije
@@ -129,19 +129,19 @@ func NewMemtable(useSkipList bool, maxHeight int, n int) *Memtable {
 func (m *Memtable) Update(key []byte, value []byte, timestamp int64, tombstone bool) {
 	_, exist := m.Search(key)
 	if !exist {
-		m.keys = append(m.keys, key)
-		m.size++
+		m.Keys = append(m.Keys, key)
+		m.Size++
 	}
-	m.structure.Update(key, value, timestamp, tombstone)
+	m.Structure.Update(key, value, timestamp, tombstone)
 
 }
 
 func (m *Memtable) Delete(key []byte) {
-	m.structure.Delete(key)
+	m.Structure.Delete(key)
 }
 
 func (m *Memtable) Search(key []byte) ([]byte, bool) {
-	entry, found := m.structure.Search(key)
+	entry, found := m.Structure.Search(key)
 	if !found || entry.Tombstone {
 		return nil, false
 	}
@@ -149,8 +149,8 @@ func (m *Memtable) Search(key []byte) ([]byte, bool) {
 }
 
 func (m *Memtable) Print() {
-	for _, key := range m.keys {
-		entry, found := m.structure.Search(key)
+	for _, key := range m.Keys {
+		entry, found := m.Structure.Search(key)
 		if found {
 			if !entry.Tombstone {
 				fmt.Printf("Key: %s, Value: %s\n", key, entry.Value)
@@ -164,7 +164,7 @@ func (m *Memtable) FlushToDisk() {
 	fmt.Println("Flushing Memtable to disk...")
 	m.Print()
 	// Ovde bi se podaci upisivali na disk (u SSTable)
-	m.structure.Clear()
+	m.Structure.Clear()
 	//m.structure = skiplist.MakeSkipList(m.maxHeight)
 	m.Print()
 }
