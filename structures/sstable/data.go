@@ -71,9 +71,11 @@ func (dr *DataRecord) Serialize(dict *compression.Dictionary) ([]byte, error) {
 		}
 		// Upisujemo Key
 		serialized_data = append(serialized_data, dr.Key...)
+
 		// Upisujemo Value ako nije logicki obrisan
 		if !dr.Tombstone {
 			serialized_data = append(serialized_data, dr.Value...)
+
 		}
 	} else {
 		// Upisujemo indeks kljuca u recniku
@@ -83,6 +85,7 @@ func (dr *DataRecord) Serialize(dict *compression.Dictionary) ([]byte, error) {
 		}
 		serialized_data = append(serialized_data, byte(index>>56), byte(index>>48), byte(index>>40), byte(index>>32),
 			byte(index>>24), byte(index>>16), byte(index>>8), byte(index))
+
 		// Upisujemo indeks vrednosti u recniku
 		if !dr.Tombstone {
 			index, found = dict.SearchKey(dr.Value)
@@ -91,16 +94,25 @@ func (dr *DataRecord) Serialize(dict *compression.Dictionary) ([]byte, error) {
 			}
 			serialized_data = append(serialized_data, byte(index>>56), byte(index>>48), byte(index>>40), byte(index>>32),
 				byte(index>>24), byte(index>>16), byte(index>>8), byte(index))
+
 		}
 	}
 	return serialized_data, nil
 }
 
 // WriteDataRecord upisuje DataRecord u fajl
-func (dr *DataRecord) WriteDataRecord(path string, dict *compression.Dictionary, bm *block_organization.BlockManager, block_number int) error {
+func (dr *DataRecord) WriteDataRecord(path string, dict *compression.Dictionary, bm *block_organization.BlockManager) error {
 
 	serialized_data, err := dr.Serialize(dict)
-	err = bm.WriteBlock(path, block_number, serialized_data)
+	if err != nil {
+		return fmt.Errorf("error serializing data record: %w", err)
+	}
+	block_num, err := bm.AppendBlock(path, serialized_data)
+	if err != nil {
+		return fmt.Errorf("error appending data record to file %s: %w", path, err)
+	}
+	// Postavljanje ofseta na poziciju gde je zapis upisan
+	dr.Offset = block_num * bm.BlockSize // Racunamo ofset kao broj bloka pomnozen sa velicinom bloka
 	return err
 }
 
@@ -120,12 +132,124 @@ func (dr *DataRecord) calcCRC() uint32 {
 // Upisuje DataBlock u fajl
 func (db *DataBlock) WriteData(path string, conf *config.Config, dict *compression.Dictionary) (error, *DataBlock) {
 	bm := block_organization.NewBlockManager(conf)
-	block_size := conf.Block.BlockSize
-	bloc_num := 0
 	for _, record := range db.Records {
 		err := record.WriteDataRecord(path, dict, bm)
 		if err != nil {
 			return fmt.Errorf("error writing data record to file %s: %w", path, err), db
+		}
 	}
 	return nil, db
+}
+
+// Citanje DataBlock iz fajla
+func ReadDataBlock(path string, conf *config.Config, dict *compression.Dictionary) (*DataBlock, error) {
+	bm := block_organization.NewBlockManager(conf)
+	block_num := 0
+	dataBlock := &DataBlock{}
+
+	for {
+		block, err := bm.ReadBlock(path, block_num)
+		if err != nil {
+			if err.Error() == "EOF" {
+				break // Kraj fajla
+			}
+			return nil, fmt.Errorf("error reading data block from file %s: %w", path, err)
+		}
+
+		if len(block) == 0 {
+			break // Nema vise podataka
+		}
+
+		record := DataRecord{}
+		if err := record.Deserialize(block, dict); err != nil {
+			return nil, fmt.Errorf("error deserializing data record: %w", err)
+		}
+		dataBlock.Records = append(dataBlock.Records, record)
+		block_num++
+	}
+	return dataBlock, nil
+}
+
+// Deserialize deserializuje DataRecord iz bajt niza
+func (dr *DataRecord) Deserialize(data []byte, dict *compression.Dictionary) error {
+	if len(data) < 4+8+1 { // CRC + Timestamp + Tombstone
+		return fmt.Errorf("data too short to deserialize DataRecord")
+	}
+
+	// Citanje CRC
+	dr.CRC = binary.LittleEndian.Uint32(data[:4])
+	data = data[4:]
+
+	// Citanje Timestamp
+	dr.Timestamp = int64(binary.LittleEndian.Uint64(data[:8]))
+	data = data[8:]
+
+	// Citanje Tombstone
+	dr.Tombstone = data[0] == 1
+	data = data[1:]
+
+	if dict == nil {
+		// Citanje Key Size
+		if len(data) < 1 {
+			return fmt.Errorf("data too short to read key size")
+		}
+		keySize := int(data[0])
+		data = data[1:]
+
+		if len(data) < keySize {
+			return fmt.Errorf("data too short to read key")
+		}
+		dr.Key = data[:keySize]
+		data = data[keySize:]
+
+		if !dr.Tombstone {
+			// Citanje Value Size
+			if len(data) < 1 {
+				return fmt.Errorf("data too short to read value size")
+			}
+			valueSize := int(data[0])
+			data = data[1:]
+
+			if len(data) < valueSize {
+				return fmt.Errorf("data too short to read value")
+			}
+			dr.Value = data[:valueSize]
+			data = data[valueSize:]
+		} else {
+			dr.Value = nil // Logicki obrisan zapis nema vrednost
+		}
+	} else {
+		if len(data) < 8 { // Ocekivano je da imamo dva indeksa po 8 bajtova
+			return fmt.Errorf("data too short to read key and value indices")
+		}
+
+		keyIndex := binary.LittleEndian.Uint64(data[:8])
+		data = data[8:]
+
+		var found bool
+		dr.Key, found = dict.SearchIndex(int(keyIndex))
+		if !found {
+			return fmt.Errorf("key index %d not found in dictionary", keyIndex)
+		}
+
+		if !dr.Tombstone {
+			if len(data) < 8 {
+				return fmt.Errorf("data too short to read value index")
+			}
+
+			valueIndex := binary.LittleEndian.Uint64(data[:8])
+			data = data[8:]
+			dr.Value, found = dict.SearchIndex(int(valueIndex))
+			if !found {
+				return fmt.Errorf("value index %d not found in dictionary", valueIndex)
+			}
+		} else {
+			dr.Value = nil // Logicki obrisan zapis nema vrednost
+		}
+	}
+	// Proveravamo CRC
+	if dr.CRC != dr.calcCRC() {
+		return fmt.Errorf("CRC mismatch: expected %d, got %d", dr.CRC, dr.calcCRC())
+	}
+	return nil
 }

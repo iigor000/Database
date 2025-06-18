@@ -39,7 +39,6 @@ type SkiplistConfig struct {
 
 type SSTableConfig struct {
 	UseCompression   bool   `json:"use_compression"` // Kompresija SSTable-a true ili false
-	IndexLevel       int    `json:"index_level"`     // Velicina index bloka u bajtovima
 	SummaryLevel     int    `json:"summary_level"`   // Velicina filter bloka u bajtovima
 	SstableDirectory string `json:"directory"`       // Direktorijum u kome se cuvaju SSTable-ovi
 }
@@ -68,7 +67,6 @@ func LoadConfigFile(path string) (*Config, error) {
 		},
 		SSTable: SSTableConfig{
 			UseCompression:   true,
-			IndexLevel:       5,
 			SummaryLevel:     10,
 			SstableDirectory: "data/sstable",
 		},

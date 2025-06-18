@@ -5,6 +5,15 @@ import (
 	"github.com/iigor000/database/structures/block_organization"
 )
 
+/*
+	=== INDEX RECORD ===
+
+	+------------------+---------+---------------+
+	|   Key Size (1B)  |   Key   |  Offset (4B)  |
+	+------------------+---------+---------------+
+
+*/
+
 // IndexRecord struktura je jedan zapis u Index segmentu SSTable-a
 type IndexRecord struct {
 	Key    []byte
@@ -27,31 +36,23 @@ func NewIndexRecord(k []byte, offs int) IndexRecord {
 
 func (ib *IndexBlock) WriteIndex(path string, conf *config.Config) error {
 	bm := block_organization.NewBlockManager(conf)
-	block_size := conf.Block.BlockSize
-	block_num := 0
-	temp_block_size := 0
 	for _, record := range ib.Records {
-		err, rec_size := record.WriteIndexRecord(path, bm, block_num)
+		err := record.WriteIndexRecord(path, bm)
 		if err != nil {
 			return err
-		}
-		temp_block_size += rec_size
-		if temp_block_size >= block_size {
-			block_num++
-			temp_block_size = 0
 		}
 	}
 
 	return nil
 }
 
-func (ir *IndexRecord) WriteIndexRecord(path string, bm *block_organization.BlockManager, i int) (error, int) {
-	serializedData, rec_size := ir.Serialize()
-	err := bm.AppendBlock(path, i, serializedData)
+func (ir *IndexRecord) WriteIndexRecord(path string, bm *block_organization.BlockManager) error {
+	serializedData, _ := ir.Serialize()
+	_, err := bm.AppendBlock(path, serializedData)
 	if err != nil {
-		return err, 0
+		return err
 	}
-	return nil, rec_size
+	return nil
 }
 
 func (ir *IndexRecord) Serialize() ([]byte, int) {
