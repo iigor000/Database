@@ -240,3 +240,39 @@ func (cbm *CachedBlockManager) AppendBlock(filePath string, data []byte) (int, e
 	cbm.C.Put(cacheKey, data) // Stavljamo podatke u kes
 	return blockNumber, nil
 }
+
+// Funkcija koja omogucava optimizovano citanje blokova podataka uz pomoc kesiranja cime se ubrzava sam proces
+func (cbm *CachedBlockManager) Read(filePath string, blockNumber int) ([]byte, error) {
+	cacheKey := fmt.Sprintf("%s:%d", filePath, blockNumber)
+	if data, isThere := cbm.C.Get(cacheKey); isThere { // Ako blok postoji u kesu, vracamo ga
+		return data, nil
+	}
+
+	// Ako pak bloka nema u kesu, onda ga citamo sa diska uz pomoc BlockManagera i stavljamo u kes
+	data, err := cbm.BM.Read(filePath, blockNumber)
+	if err != nil {
+		return nil, err
+	}
+
+	cbm.C.Put(cacheKey, data)
+	return data, nil
+}
+
+// Funkcija koja omogucava optimizovano pisanje blokova podataka uz pomoc kesiranja cime se ubrzava sam proces
+func (cbm *CachedBlockManager) Write(filePath string, blockNumber int, data []byte) error {
+	cacheKey := fmt.Sprintf("%s:%d", filePath, blockNumber)
+	cbm.C.Put(cacheKey, data) // Stavljamo podatke u kes
+	return cbm.BM.Write(filePath, blockNumber, data)
+}
+
+// Funkcija koja omogucava optimizovano dodavanje blokova podataka uz pomoc kesiranja cime se ubrzava sam proces
+func (cbm *CachedBlockManager) Append(filePath string, data []byte) (int, error) {
+	blockNumber, err := cbm.BM.Append(filePath, data)
+	if err != nil {
+		return 0, err
+	}
+
+	cacheKey := fmt.Sprintf("%s:%d", filePath, blockNumber)
+	cbm.C.Put(cacheKey, data) // Stavljamo podatke u kes
+	return blockNumber, nil
+}
