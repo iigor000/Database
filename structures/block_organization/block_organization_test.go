@@ -147,7 +147,7 @@ func TestCachedBlockManager(t *testing.T) {
 	}
 }
 
-func TestBlockManagerAppend(t *testing.T) {
+func TestBlockManagerAppendBlock(t *testing.T) {
 	// Kreiramo privremeni direktorijum za test
 	tempDir, err := os.MkdirTemp("", "block_manager_append_test")
 	if err != nil {
@@ -178,6 +178,89 @@ func TestBlockManagerAppend(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadBlock failed: %v", err)
 	}
+
+	// Poredjenje upisanih i procitanih podataka
+	if !bytes.Equal(writeData, readData) {
+		t.Errorf("Data mismatch after append: expected %v, got %v", writeData, readData)
+	}
+}
+
+// TestBlockManagerAppendMultiple proverava da li BlockManager ispravno dodaje blokove sa proverom
+func TestBlockManagerAppend(t *testing.T) {
+	// Kreiramo privremeni direktorijum za test
+	tempDir, err := os.MkdirTemp("", "block_manager_append_test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Def konfiguracija
+	cfg := config.Config{
+		Block: config.BlockConfig{
+			BlockSize:     1024, // 1 KB blokovi
+			CacheCapacity: 10,
+		},
+	}
+	bm := NewBlockManager(&cfg)
+
+	filePath := filepath.Join(tempDir, "testfile.dat")
+
+	writeData := bytes.Repeat([]byte{0xAB}, cfg.Block.BlockSize+64)
+	// Upisujemo prvi blok
+	blockNumber, err := bm.Append(filePath, writeData)
+	if err != nil {
+		t.Fatalf("AppendBlock failed: %v", err)
+	}
+
+	// Citamo prvi blok
+	readData, err := bm.Read(filePath, blockNumber)
+	if err != nil {
+		t.Fatalf("ReadBlock failed: %v", err)
+	}
+
+	// Sklanjamo padding, sto bi radila struktura koja cita podatke
+	readData = bytes.TrimRight(readData, "\x00")
+
+	// Poredjenje upisanih i procitanih podataka
+	if !bytes.Equal(writeData, readData) {
+		t.Errorf("Data mismatch after append: expected %v, got %v", writeData, readData)
+	}
+}
+
+func TestBlockManagerWrite(t *testing.T) {
+	// Kreiramo privremeni direktorijum za test
+	tempDir, err := os.MkdirTemp("", "block_manager_append_test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Def konfiguracija
+	cfg := config.Config{
+		Block: config.BlockConfig{
+			BlockSize:     1024, // 1 KB blokovi
+			CacheCapacity: 10,
+		},
+	}
+	bm := NewBlockManager(&cfg)
+
+	filePath := filepath.Join(tempDir, "testfile.dat")
+
+	writeData := bytes.Repeat([]byte{0xAB}, cfg.Block.BlockSize+64)
+	// Upisujemo prvi blok
+	err = bm.Write(filePath, 0, writeData)
+	if err != nil {
+		t.Fatalf("AppendBlock failed: %v", err)
+	}
+
+	// Citamo prvi blok
+	readData, err := bm.Read(filePath, 0)
+	if err != nil {
+		t.Fatalf("ReadBlock failed: %v", err)
+	}
+
+	// Sklanjamo padding, sto bi radila struktura koja cita podatke
+	readData = bytes.TrimRight(readData, "\x00")
 
 	// Poredjenje upisanih i procitanih podataka
 	if !bytes.Equal(writeData, readData) {
