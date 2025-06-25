@@ -47,3 +47,32 @@ func TestSSTable(t *testing.T) {
 	}
 
 }
+
+func TestSSTableFlush(t *testing.T) {
+	conf := &config.Config{
+		SSTable: config.SSTableConfig{
+			SstableDirectory: "./sstable_test",
+			UseCompression:   true,
+			SummaryLevel:     2,
+		},
+		Memtable: config.MemtableConfig{
+			NumberOfMemtables: 1,
+			NumberOfEntries:   5,
+			Structure:         "skiplist",
+		},
+		Skiplist: config.SkiplistConfig{
+			MaxHeight: 16,
+		},
+		Block: config.BlockConfig{
+			BlockSize:     4096,
+			CacheCapacity: 100,
+		},
+	}
+
+	m := memtable.NewMemtables(conf)
+	m.Update([]byte("key1"), []byte("value1"), 1, false)
+	m.Update([]byte("key2"), []byte("value2"), 2, false)
+	m.Update([]byte("key3"), []byte("value3"), 3, false)
+	m.Update([]byte("key4"), []byte("value4"), 4, false)
+	m.Update([]byte("key5"), []byte("value5"), 5, false)
+}
