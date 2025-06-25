@@ -24,8 +24,8 @@ type DataRecord struct {
 	Offset    int    // Offset u fajlu gde je zapis upisan
 }
 
-// DataBlock struktura je skup DataRecord-a
-type DataBlock struct {
+// Data struktura je skup DataRecord-a
+type Data struct {
 	Records []DataRecord
 }
 
@@ -130,7 +130,7 @@ func (dr *DataRecord) calcCRC() uint32 {
 }
 
 // Upisuje DataBlock u fajl
-func (db *DataBlock) WriteData(path string, conf *config.Config, dict *compression.Dictionary) (error, *DataBlock) {
+func (db *Data) WriteData(path string, conf *config.Config, dict *compression.Dictionary) (error, *Data) {
 	bm := block_organization.NewBlockManager(conf)
 	for _, record := range db.Records {
 		err := record.WriteDataRecord(path, dict, bm)
@@ -142,10 +142,10 @@ func (db *DataBlock) WriteData(path string, conf *config.Config, dict *compressi
 }
 
 // Citanje DataBlock iz fajla
-func ReadDataBlock(path string, conf *config.Config, dict *compression.Dictionary) (*DataBlock, error) {
+func ReadData(path string, conf *config.Config, dict *compression.Dictionary) (*Data, error) {
 	bm := block_organization.NewBlockManager(conf)
-	block_num := 0
-	dataBlock := &DataBlock{}
+	block_num := 0 // Pocinjemo od prvog bloka
+	dataBlock := &Data{}
 
 	for {
 		block, err := bm.ReadBlock(path, block_num)
@@ -164,6 +164,7 @@ func ReadDataBlock(path string, conf *config.Config, dict *compression.Dictionar
 		if err := record.Deserialize(block, dict); err != nil {
 			return nil, fmt.Errorf("error deserializing data record: %w", err)
 		}
+		record.Offset = block_num * conf.Block.BlockSize // Racunamo ofset kao broj bloka pomnozen sa velicinom bloka
 		dataBlock.Records = append(dataBlock.Records, record)
 		block_num++
 	}
@@ -203,7 +204,7 @@ func (dr *DataRecord) Deserialize(data []byte, dict *compression.Dictionary) err
 		data = data[keySize:]
 
 		if !dr.Tombstone {
-			// Citanje Value Size
+
 			if len(data) < 1 {
 				return fmt.Errorf("data too short to read value size")
 			}
@@ -215,6 +216,7 @@ func (dr *DataRecord) Deserialize(data []byte, dict *compression.Dictionary) err
 			}
 			dr.Value = data[:valueSize]
 			data = data[valueSize:]
+
 		} else {
 			dr.Value = nil // Logicki obrisan zapis nema vrednost
 		}

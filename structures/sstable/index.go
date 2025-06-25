@@ -1,6 +1,8 @@
 package sstable
 
 import (
+	"fmt"
+
 	"github.com/iigor000/database/config"
 	"github.com/iigor000/database/structures/block_organization"
 )
@@ -21,7 +23,7 @@ type IndexRecord struct {
 }
 
 // IndexBlock struktura je skup IndexRecord-a
-type IndexBlock struct {
+type Index struct {
 	Records []IndexRecord
 }
 
@@ -34,7 +36,7 @@ func NewIndexRecord(k []byte, offs int) IndexRecord {
 	return record
 }
 
-func (ib *IndexBlock) WriteIndex(path string, conf *config.Config) error {
+func (ib *Index) WriteIndex(path string, conf *config.Config) error {
 	bm := block_organization.NewBlockManager(conf)
 	for _, record := range ib.Records {
 		err := record.WriteIndexRecord(path, bm)
@@ -62,4 +64,56 @@ func (ir *IndexRecord) Serialize() ([]byte, int) {
 	serializedData = append(serializedData, ir.Key...)
 	serializedData = append(serializedData, byte(ir.Offset>>24), byte(ir.Offset>>16), byte(ir.Offset>>8), byte(ir.Offset))
 	return serializedData, rec_size
+}
+
+// ReadIndexBlock cita IndexBlock iz fajla
+func ReadIndex(path string, conf *config.Config) (*Index, error) {
+	bm := block_organization.NewBlockManager(conf)
+	blockNum := 0 // Pocinjemo od prvog bloka
+	indexs := &Index{}
+
+	for {
+		block, err := bm.ReadBlock(path, blockNum)
+		if err != nil {
+			if err.Error() == "EOF" {
+				break // Kraj fajla
+			}
+			return nil, err
+		}
+		if len(block) == 0 {
+			break // Nema vise podataka
+		}
+		record := IndexRecord{}
+		if err := record.Deserialize(block); err != nil {
+			return nil, err
+		}
+		record.Offset = blockNum * conf.Block.BlockSize // Racunamo ofset kao broj bloka pomnozen sa velicinom bloka
+		indexs.Records = append(indexs.Records, record)
+		blockNum++
+	}
+	return indexs, nil
+}
+
+// Deserialize deserializuje IndexRecord iz bajt niza
+func (ir *IndexRecord) Deserialize(data []byte) error {
+	if len(data) < 1+4 { // Key Size + Offset
+		return fmt.Errorf("data too short to read key size and offset")
+	}
+
+	// Citanje Key Size
+	keySize := int(data[0])
+	data = data[1:]
+
+	if len(data) < keySize+4 {
+		return fmt.Errorf("data too short to read key and offset")
+	}
+
+	// Citanje Key
+	ir.Key = data[:keySize]
+	data = data[keySize:]
+
+	// Citanje Offset
+	ir.Offset = int(data[0])<<24 | int(data[1])<<16 | int(data[2])<<8 | int(data[3])
+
+	return nil
 }
