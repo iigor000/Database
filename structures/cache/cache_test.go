@@ -9,10 +9,7 @@ import (
 // TestCache testira Put i Get funkcionalnosti kesiranja
 // i izbacivanje najstarijeg elementa kad se dostigne kapacitet
 func TestCache(t *testing.T) {
-	cache, err := NewCache(config.Config{Cache: config.CacheConfig{Capacity: 2}}) // Kapacitet keša je 2
-	if err != nil {
-		t.Fatalf("Failed to create cache: %v", err)
-	}
+	cache := NewCache(&config.Config{Cache: config.CacheConfig{Capacity: 2}}) // Kapacitet keša je 2
 
 	// Dodajemo dva elementa u keš
 	cache.Put("a", []byte("value1"))

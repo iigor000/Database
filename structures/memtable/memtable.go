@@ -36,9 +36,10 @@ func NewMemtables(conf *config.Config) *Memtables {
 
 // CRUD operacije
 // Update dodaje ili azurira na osnovu kljuca u Memtables
-func (m *Memtables) Update(key []byte, value []byte, timestamp int64, tombstone bool) {
+func (m *Memtables) Update(key []byte, value []byte, timestamp int64, tombstone bool) bool {
 	// Prolazimo kroz sve Memtable i azuriramo
 	firstNotFull := -1
+	flushed := false
 	// Trazimo Memtable koji sadrzi dati kljuc i uaput proveravamo koji je prvi koji nije pun
 	// Ako ne nadjemo, onda cemo ga dodati u prvi koji nije pun
 	for i := 0; i < m.numberOfMemtables; i++ {
@@ -48,7 +49,7 @@ func (m *Memtables) Update(key []byte, value []byte, timestamp int64, tombstone 
 		if exist {
 			// Ako postoji, azuriramo vrednost
 			memtable.Update(key, value, timestamp, tombstone)
-			return
+			return false
 		} else {
 			if firstNotFull == -1 && memtable.Size < memtable.Capacity {
 				firstNotFull = i
@@ -63,6 +64,7 @@ func (m *Memtables) Update(key []byte, value []byte, timestamp int64, tombstone 
 		if m.memtables[firstNotFull].Size >= m.memtables[firstNotFull].Capacity {
 			// Ako je poslednji Memtable pun, onda ga flush-ujemo na disk
 			m.memtables[0].FlushToDisk()
+			flushed = true
 			// Resetujemo redosled Memtable-a
 			for j := 0; j < m.numberOfMemtables-1; j++ {
 				m.memtables[j] = m.memtables[j+1]
@@ -72,6 +74,7 @@ func (m *Memtables) Update(key []byte, value []byte, timestamp int64, tombstone 
 		}
 	}
 
+	return flushed
 }
 
 // Delete uklanja kljuc iz Memtables

@@ -21,12 +21,12 @@ type Cache struct {
 }
 
 // Funkcija za kreiranje novog keša
-func NewCache(config config.Config) (*Cache, error) {
+func NewCache(config *config.Config) *Cache {
 	return &Cache{
 		Capacity: config.Cache.Capacity,
 		Items:    make(map[string]*list.Element),
 		List:     list.New(),
-	}, nil
+	}
 }
 
 // Funkcija za dobijanje vrednosti iz keša na osnovu ključa
