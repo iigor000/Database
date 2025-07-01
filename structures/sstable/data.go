@@ -101,19 +101,13 @@ func (dr *DataRecord) Serialize(dict *compression.Dictionary) ([]byte, error) {
 }
 
 // WriteDataRecord upisuje DataRecord u fajl
-func (dr *DataRecord) WriteDataRecord(path string, dict *compression.Dictionary, bm *block_organization.BlockManager) error {
+func (dr *DataRecord) WriteDataRecord(path string, dict *compression.Dictionary, bm *block_organization.BlockManager) (int, error) {
 
 	serialized_data, err := dr.Serialize(dict)
 	if err != nil {
-		return fmt.Errorf("error serializing data record: %w", err)
+		return -1, fmt.Errorf("error serializing data record: %w", err)
 	}
-	block_num, err := bm.AppendBlock(path, serialized_data)
-	if err != nil {
-		return fmt.Errorf("error appending data record to file %s: %w", path, err)
-	}
-	// Postavljanje ofseta na poziciju gde je zapis upisan
-	dr.Offset = block_num * bm.BlockSize // Racunamo ofset kao broj bloka pomnozen sa velicinom bloka
-	return err
+	return bm.AppendBlock(path, serialized_data)
 }
 
 // calcCRC Racunaa CRC na osnovu Key, Value, Timestamp i Tombstone
@@ -132,11 +126,14 @@ func (dr *DataRecord) calcCRC() uint32 {
 // Upisuje DataBlock u fajl
 func (db *Data) WriteData(path string, conf *config.Config, dict *compression.Dictionary) (error, *Data) {
 	bm := block_organization.NewBlockManager(conf)
+	rec := 0
 	for _, record := range db.Records {
-		err := record.WriteDataRecord(path, dict, bm)
+		bn, err := record.WriteDataRecord(path, dict, bm)
 		if err != nil {
 			return fmt.Errorf("error writing data record to file %s: %w", path, err), db
 		}
+		db.Records[rec].Offset = bn * conf.Block.BlockSize // Racunamo ofset kao broj bloka pomnozen sa velicinom bloka
+		rec++
 	}
 	return nil, db
 }

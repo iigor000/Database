@@ -15,7 +15,7 @@ import (
 type SSTable struct {
 	Data           *Data
 	Index          *Index
-	Summary        SummaryBlock
+	Summary        *Summary
 	Filter         bloomfilter.BloomFilter
 	Metadata       *merkle.MerkleTree
 	Gen            int
@@ -35,7 +35,7 @@ func FlushSSTable(conf *config.Config, memtable memtable.Memtable, generation in
 	}
 	sstable.Data, sstable.CompressionKey = buildData(memtable, conf, generation, path)
 	sstable.Index = buildIndex(conf, generation, path, sstable.Data)
-	//sstable.Summary = buildSummary(conf, sstable.Index)
+	sstable.Summary = buildSummary(conf, sstable.Index, generation, path)
 	sstable.Filter = buildBloomFilter(conf, generation, path, sstable.Data)
 	dictPath := CreateFileName(path, generation, "Dictionary", "db")
 	sstable.CompressionKey.Write(dictPath)
@@ -78,8 +78,42 @@ func buildIndex(conf *config.Config, gen int, path string, db *Data) *Index {
 		ir := NewIndexRecord(record.Key, record.Offset)
 		ib.Records = append(ib.Records, ir)
 	}
-	ib.WriteIndex(filename, conf)
+	err := ib.WriteIndex(filename, conf)
+	if err != nil {
+		panic("Error writing index to file: " + err.Error())
+	}
 	return ib
+}
+
+func buildSummary(conf *config.Config, index *Index, gen int, path string) *Summary {
+	sb := &Summary{}
+	filename := CreateFileName(path, gen, "Summary", "db")
+	for i := 0; i < len(index.Records); i += conf.SSTable.SummaryLevel {
+		if i+conf.SSTable.SummaryLevel >= len(index.Records) {
+			// Pravimo summary sa onolko koliko je ostalo
+			sr := SummaryRecord{
+				FirstKey:        index.Records[i].Key,
+				LastKey:         index.Records[len(index.Records)-1].Key,
+				IndexOffset:     index.Records[i].IndexOffset,
+				NumberOfRecords: len(index.Records) - i,
+			}
+			sb.Records = append(sb.Records, sr)
+			break
+		} else {
+			sr := SummaryRecord{
+				FirstKey:        index.Records[i].Key,
+				LastKey:         index.Records[i+conf.SSTable.SummaryLevel-1].Key,
+				IndexOffset:     index.Records[i].IndexOffset,
+				NumberOfRecords: conf.SSTable.SummaryLevel,
+			}
+			sb.Records = append(sb.Records, sr)
+		}
+	}
+	err := sb.WriteSummary(filename, conf)
+	if err != nil {
+		panic("Error writing summary to file: " + err.Error())
+	}
+	return sb
 }
 
 func buildBloomFilter(conf *config.Config, gen int, path string, db *Data) bloomfilter.BloomFilter {
@@ -173,6 +207,14 @@ func NewSSTable(dir string, conf *config.Config, gen int) *SSTable {
 		panic("Error reading index from file: " + err.Error())
 	}
 	sstable.Index = index
+	// Citanje Summary fajla
+	summaryPath := CreateFileName(dir, gen, "Summary", "db")
+	summary, err := ReadSummary(summaryPath, conf)
+	if err != nil {
+		panic("Error reading summary from file: " + err.Error())
+	}
+	sstable.Summary = summary
+
 	// Citanje Filter fajla
 	filterPath := CreateFileName(dir, gen, "Filter", "db")
 	filterData, err := ReadBloomFilter(filterPath, conf)
