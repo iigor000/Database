@@ -42,9 +42,10 @@ func FlushSSTable(conf *config.Config, memtable memtable.Memtable, generation in
 	sstable.Metadata = buildMetadata(conf, generation, path, sstable.Data)
 	// Upis TOC u fajl
 	toc_path := CreateFileName(path, generation, "TOC", "txt")
-	toc_data := fmt.Sprintf("Generation: %d\nData: %s\nIndex: %s\nFilter: %s\nMetadata: %s\n",
+	toc_data := fmt.Sprintf("Generation: %d\nData: %s\nIndex: %s\nSummary: %s\nFilter: %s\nMetadata: %s\n",
 		sstable.Gen, CreateFileName(path, generation, "Data", "db"),
 		CreateFileName(path, generation, "Index", "db"),
+		CreateFileName(path, generation, "Summary", "db"),
 		CreateFileName(path, generation, "Filter", "db"),
 		CreateFileName(path, generation, "Metadata", "db"))
 	WriteTxtToFile(toc_path, toc_data)
@@ -230,5 +231,82 @@ func NewSSTable(dir string, conf *config.Config, gen int) *SSTable {
 	}
 	sstable.Metadata = metadata
 
+	return sstable
+}
+
+// WriteSSTable upisuje SSTable u fajl
+// Pomocna funkcija za LSM
+func WriteSSTable(sstable *SSTable, dir string, conf *config.Config) error {
+	path := fmt.Sprintf("%s/%d", dir, sstable.Gen)
+	err := CreateDirectoryIfNotExists(path)
+	if err != nil {
+		return fmt.Errorf("error creating directory for SSTable: %w", err)
+	}
+
+	// Write Data
+	dataPath := CreateFileName(path, sstable.Gen, "Data", "db")
+	err, _ = sstable.Data.WriteData(dataPath, conf, sstable.CompressionKey)
+	if err != nil {
+		return fmt.Errorf("error writing data to file %s: %w", dataPath, err)
+	}
+
+	// Write Index
+	indexPath := CreateFileName(path, sstable.Gen, "Index", "db")
+	err = sstable.Index.WriteIndex(indexPath, conf)
+	if err != nil {
+		return fmt.Errorf("error writing index to file %s: %w", indexPath, err)
+	}
+
+	// Write Summary
+	summaryPath := CreateFileName(path, sstable.Gen, "Summary", "db")
+	err = sstable.Summary.WriteSummary(summaryPath, conf)
+	if err != nil {
+		return fmt.Errorf("error writing summary to file %s: %w", summaryPath, err)
+	}
+
+	// Write Bloom Filter
+	filterPath := CreateFileName(path, sstable.Gen, "Filter", "db")
+	bm := block_organization.NewBlockManager(conf)
+	_, err = bm.AppendBlock(filterPath, sstable.Filter.Serialize())
+	if err != nil {
+		return fmt.Errorf("error writing bloom filter to file %s: %w", filterPath, err)
+	}
+
+	// Write Metadata
+	metadataPath := CreateFileName(path, sstable.Gen, "Metadata", "db")
+	err = sstable.Metadata.SerializeToBinaryFile(metadataPath)
+	if err != nil {
+		return fmt.Errorf("error writing Merkle tree to file %s: %w", metadataPath, err)
+	}
+	// Write TOC file
+	tocPath := CreateFileName(path, sstable.Gen, "TOC", "txt")
+	tocData := fmt.Sprintf("Generation: %d\nData: %s\nIndex: %s\nSummary: %s\nFilter: %s\nMetadata: %s\n",
+		sstable.Gen, CreateFileName(path, sstable.Gen, "Data", "db"),
+		CreateFileName(path, sstable.Gen, "Index", "db"),
+		CreateFileName(path, sstable.Gen, "Summary", "db"),
+		CreateFileName(path, sstable.Gen, "Filter", "db"),
+		CreateFileName(path, sstable.Gen, "Metadata", "db"))
+	err = WriteTxtToFile(tocPath, tocData)
+	if err != nil {
+		return fmt.Errorf("error writing TOC to file %s: %w", tocPath, err)
+	}
+
+	return nil
+}
+
+// NewEmptySSTable kreira prazan SSTable
+// Pomocna funkcija za LSM
+func NewEmptySSTable(conf *config.Config, generation int) *SSTable {
+	sstable := &SSTable{
+		Data:           &Data{Records: []DataRecord{}},
+		Index:          &Index{Records: []IndexRecord{}},
+		Summary:        &Summary{Records: []SummaryRecord{}},
+		Gen:            generation,
+		UseCompression: conf.SSTable.UseCompression,
+		CompressionKey: compression.NewDictionary(),
+	}
+	if sstable.UseCompression {
+		sstable.CompressionKey = compression.NewDictionary()
+	}
 	return sstable
 }
