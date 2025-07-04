@@ -1,0 +1,425 @@
+package btree
+
+import (
+	"fmt"
+)
+
+type BTree struct {
+	root *Node
+	t    int // minimalni stepen stabla
+}
+
+type Node struct {
+	keys     []byte   // kljucevi u cvoru
+	values   [][]byte // vrednosti povezane sa kljucevima
+	children []*Node  // pokazivaci na decu
+	leaf     bool     // da li je list
+}
+
+// NewBTree kreira novo B stablo sa zadatim minimalnim stepenom t
+func NewBTree(t int) *BTree {
+	if t < 2 {
+		t = 2 // minimalni stepen ne moze biti manji od 2
+	}
+	return &BTree{t: t}
+}
+
+// Search pretrazuje B stablo za kljucem k i vraca odgovarajucu vrednost
+func (t *BTree) Search(k byte) []byte {
+	if t.root == nil {
+		return nil
+	}
+	return search(t.root, k)
+}
+
+// search rekurzivno pretrazuje cvor x za kljucem k
+func search(x *Node, k byte) []byte {
+	i := 0
+	for i < len(x.keys) && k > x.keys[i] {
+		i++
+	}
+
+	if i < len(x.keys) && k == x.keys[i] {
+		return x.values[i]
+	}
+
+	if x.leaf {
+		return nil
+	}
+
+	// Provera da li dete postoji pre rekurzivnog poziva
+	if i >= len(x.children) {
+		return nil
+	}
+	return search(x.children[i], k)
+}
+
+// Insert umetne kljuc k i vrednost v u B stablo
+func (t *BTree) Insert(k byte, v []byte) {
+	if t.root == nil {
+		// Prvi unos u stablo - korenski cvor
+		t.root = &Node{
+			keys:     []byte{k},
+			values:   [][]byte{v},
+			children: []*Node{},
+			leaf:     true,
+		}
+		return
+	}
+
+	// Ako je koren pun, podeli ga pre umetanja
+	if len(t.root.keys) == 2*t.t-1 {
+		newRoot := &Node{
+			children: []*Node{t.root},
+			leaf:     false,
+		}
+		t.splitChild(newRoot, 0)
+		t.root = newRoot
+	}
+	t.insertNonFull(t.root, k, v)
+}
+
+// splitChild deli puno dete i ubacuje srednji kljuc u roditelja x
+func (t *BTree) splitChild(x *Node, i int) {
+	y := x.children[i]
+	z := &Node{leaf: y.leaf}
+
+	mid := t.t - 1 // indeks srednjeg kljuca
+
+	// Sacuvaj srednji kljuc i vrednost
+	midKey := y.keys[mid]
+	midValue := y.values[mid]
+
+	// Desna polovina kljuceva i vrednosti ide u novi cvor z
+	z.keys = append(z.keys, y.keys[mid+1:]...)
+	z.values = append(z.values, y.values[mid+1:]...)
+
+	// Leva polovina ostaje u y
+	y.keys = y.keys[:mid]
+	y.values = y.values[:mid]
+
+	// Ako cvor nije list, podeli i decu
+	if !y.leaf {
+		z.children = append(z.children, y.children[mid+1:]...)
+		y.children = y.children[:mid+1]
+	}
+
+	// Ubacivanje srednjeg kljuca i vrednosti u roditelja
+	x.keys = append(x.keys, 0)
+	copy(x.keys[i+1:], x.keys[i:])
+	x.keys[i] = midKey
+
+	x.values = append(x.values, nil)
+	copy(x.values[i+1:], x.values[i:])
+	x.values[i] = midValue
+
+	// Ubacivanje novog deteta u roditelja
+	x.children = append(x.children, nil)
+	copy(x.children[i+2:], x.children[i+1:])
+	x.children[i+1] = z
+}
+
+// insertNonFull umetne kljuc k i vrednost v u cvor x koji nije pun
+func (t *BTree) insertNonFull(x *Node, k byte, v []byte) {
+	i := len(x.keys) - 1
+
+	if x.leaf {
+		// Ako kljuc vec postoji, samo azuriraj vrednost
+		for j := 0; j < len(x.keys); j++ {
+			if x.keys[j] == k {
+				x.values[j] = v
+				return
+			}
+		}
+
+		// Ubacivanje novog kljuca i vrednosti u list
+		x.keys = append(x.keys, 0)
+		x.values = append(x.values, nil)
+		for i >= 0 && k < x.keys[i] {
+			x.keys[i+1] = x.keys[i]
+			x.values[i+1] = x.values[i]
+			i--
+		}
+		x.keys[i+1] = k
+		x.values[i+1] = v
+	} else {
+		// Nadji odgovarajuce dete za umetanje
+		for i >= 0 && k < x.keys[i] {
+			i--
+		}
+		i++
+
+		// Ako je dete puno, podeli ga
+		if len(x.children[i].keys) == 2*t.t-1 {
+			t.splitChild(x, i)
+			if k > x.keys[i] {
+				i++
+			}
+		}
+		t.insertNonFull(x.children[i], k, v)
+	}
+}
+
+// Delete uklanja kljuc k iz B stabla
+func (t *BTree) Delete(k byte) {
+	if t.root == nil {
+		return
+	}
+
+	t.delete(t.root, k)
+
+	// Ako koren ostane prazan, smanji visinu stabla
+	if len(t.root.keys) == 0 {
+		if t.root.leaf {
+			t.root = nil
+		} else {
+			t.root = t.root.children[0]
+		}
+	}
+}
+
+// delete uklanja kljuc k iz cvor x
+func (t *BTree) delete(x *Node, k byte) {
+	i := 0
+	for i < len(x.keys) && x.keys[i] < k {
+		i++
+	}
+
+	// Kljuc je u ovom cvoru
+	if i < len(x.keys) && x.keys[i] == k {
+		if x.leaf {
+			// Brisanje iz lista
+			t.deleteFromLeaf(x, i)
+		} else {
+			// Brisanje iz internog cvora
+			t.deleteFromInternalNode(x, i)
+		}
+	} else {
+		if x.leaf {
+			// Kljuc nije pronadjen
+			return
+		}
+
+		// Kljuc je u podstablu x.children[i]
+		flag := (i == len(x.keys))
+
+		// Ako dete ima premalo kljuceva, popuni ga
+		if len(x.children[i].keys) < t.t {
+			t.fill(x, i)
+		}
+
+		if flag && i > len(x.keys) {
+			t.delete(x.children[i-1], k)
+		} else {
+			t.delete(x.children[i], k)
+		}
+	}
+}
+
+// deleteFromLeaf uklanja kljuc i vrednost iz lista
+func (t *BTree) deleteFromLeaf(x *Node, i int) {
+	// Ukloni kljuc i vrednost iz lista
+	x.keys = append(x.keys[:i], x.keys[i+1:]...)
+	x.values = append(x.values[:i], x.values[i+1:]...)
+}
+
+// deleteFromInternalNode uklanja kljuc i vrednost iz unutrasnjeg cvora
+func (t *BTree) deleteFromInternalNode(x *Node, i int) {
+	k := x.keys[i]
+
+	if len(x.children[i].keys) >= t.t {
+		// Uzmi prethodnika
+		pred := t.getPredecessor(x.children[i])
+		x.keys[i] = pred
+		x.values[i] = t.getPredecessorValue(x.children[i])
+		t.delete(x.children[i], pred)
+	} else if len(x.children[i+1].keys) >= t.t {
+		// Uzmi sledbenika
+		succ := t.getSuccessor(x.children[i+1])
+		x.keys[i] = succ
+		x.values[i] = t.getSuccessorValue(x.children[i+1])
+		t.delete(x.children[i+1], succ)
+	} else {
+		// Spoji decu i kljuc iz roditelja
+		t.merge(x, i)
+		t.delete(x.children[i], k)
+	}
+}
+
+// getPredecessor vraca najveci kljuc u podstablu x
+func (t *BTree) getPredecessor(x *Node) byte {
+	if x.leaf {
+		return x.keys[len(x.keys)-1]
+	}
+	return t.getPredecessor(x.children[len(x.children)-1])
+}
+
+// getPredecessorValue vraca vrednost najveceg kljuca u podstablu x
+func (t *BTree) getPredecessorValue(x *Node) []byte {
+	if x.leaf {
+		return x.values[len(x.values)-1]
+	}
+	return t.getPredecessorValue(x.children[len(x.children)-1])
+}
+
+// getSuccessor vraca najmanji kljuc u podstablu x
+func (t *BTree) getSuccessor(x *Node) byte {
+	if x.leaf {
+		return x.keys[0]
+	}
+	return t.getSuccessor(x.children[0])
+}
+
+// getSuccessorValue vraca vrednost najmanjeg kljuca u podstablu x
+func (t *BTree) getSuccessorValue(x *Node) []byte {
+	if x.leaf {
+		return x.values[0]
+	}
+	return t.getSuccessorValue(x.children[0])
+}
+
+// fill popunjava dete x na indeksu i ako ima premalo kljuceva
+func (t *BTree) fill(x *Node, i int) {
+	if i != 0 && len(x.children[i-1].keys) >= t.t {
+		// Pozajmi od levog brata
+		t.borrowFromPrev(x, i)
+	} else if i != len(x.keys) && len(x.children[i+1].keys) >= t.t {
+		// Pozajmi od desnog brata
+		t.borrowFromNext(x, i)
+	} else {
+		// Spoji dete sa bratom
+		if i != len(x.keys) {
+			t.merge(x, i)
+		} else {
+			t.merge(x, i-1)
+		}
+	}
+}
+
+// borrowFromPrev pozajmljuje kljuc i vrednost od levog
+func (t *BTree) borrowFromPrev(x *Node, i int) {
+	child := x.children[i]
+	sibling := x.children[i-1]
+
+	// Pomeri kljuc iz roditelja u dete
+	child.keys = append([]byte{x.keys[i-1]}, child.keys...)
+	child.values = append([][]byte{x.values[i-1]}, child.values...)
+
+	// Ako nije list, pomeri dete iz brata u dete
+	if !child.leaf {
+		child.children = append([]*Node{sibling.children[len(sibling.children)-1]}, child.children...)
+		sibling.children = sibling.children[:len(sibling.children)-1]
+	}
+
+	// Pomeri kljuc iz brata u roditelja
+	x.keys[i-1] = sibling.keys[len(sibling.keys)-1]
+	x.values[i-1] = sibling.values[len(sibling.values)-1]
+
+	// Ukloni kljuc iz brata
+	sibling.keys = sibling.keys[:len(sibling.keys)-1]
+	sibling.values = sibling.values[:len(sibling.values)-1]
+}
+
+// borrowFromNext pozajmljuje kljuc i vrednost od desnog brata
+func (t *BTree) borrowFromNext(x *Node, i int) {
+	child := x.children[i]
+	sibling := x.children[i+1]
+
+	// Pomeri kljuc iz roditelja u dete
+	child.keys = append(child.keys, x.keys[i])
+	child.values = append(child.values, x.values[i])
+
+	// Ako nije list, pomeri dete iz brata u dete
+	if !child.leaf {
+		child.children = append(child.children, sibling.children[0])
+		sibling.children = sibling.children[1:]
+	}
+
+	// Pomeri kljuc iz brata u roditelja
+	x.keys[i] = sibling.keys[0]
+	x.values[i] = sibling.values[0]
+
+	// Ukloni kljuc iz brata
+	sibling.keys = sibling.keys[1:]
+	sibling.values = sibling.values[1:]
+}
+
+// merge spaja dete x na indeksu i sa njegovim bratom
+func (t *BTree) merge(x *Node, i int) {
+	child := x.children[i]
+	sibling := x.children[i+1]
+
+	// Dodaj kljuc iz roditelja u dete
+	child.keys = append(child.keys, x.keys[i])
+	child.values = append(child.values, x.values[i])
+
+	// Dodaj kljuceve i vrednosti iz brata u dete
+	child.keys = append(child.keys, sibling.keys...)
+	child.values = append(child.values, sibling.values...)
+
+	// Dodaj decu iz brata ako nisu listovi
+	if !child.leaf {
+		child.children = append(child.children, sibling.children...)
+	}
+
+	// Ukloni kljuc i dete iz roditelja
+	x.keys = append(x.keys[:i], x.keys[i+1:]...)
+	x.values = append(x.values[:i], x.values[i+1:]...)
+	x.children = append(x.children[:i+1], x.children[i+2:]...)
+}
+
+// Traverse obilazi B stablo i ispisuje kljuceve
+func (t *BTree) Traverse() {
+	traverse(t.root)
+}
+
+// traverse rekurzivno obilazi cvor x i ispisuje njegove kljuceve
+func traverse(x *Node) {
+	if x != nil {
+		for i := 0; i < len(x.keys); i++ {
+			if !x.leaf {
+				traverse(x.children[i])
+			}
+			fmt.Printf("%d ", x.keys[i])
+		}
+		if !x.leaf {
+			traverse(x.children[len(x.keys)])
+		}
+	}
+}
+
+// MinToMaxTraversal obilazi B stablo i ispisuje kljuceve od najmanjeg do najveceg
+func (t *BTree) MinToMaxTraversal() {
+	fmt.Println("B-tree values from smallest to largest:")
+	sorted := t.SortedKeys()
+	for _, k := range sorted {
+		fmt.Printf("%d ", k)
+	}
+	fmt.Println()
+}
+
+// SortedKeys vraca kljuceve B stabla u sortiranom redosledu
+func (t *BTree) SortedKeys() []byte {
+	return collectSortedKeys(t.root)
+}
+
+// collectSortedKeys rekurzivno prikuplja kljuceve iz stabla u sortiranom redosledu
+func collectSortedKeys(x *Node) []byte {
+	if x == nil {
+		return []byte{}
+	}
+
+	result := []byte{}
+
+	for i := 0; i < len(x.keys); i++ {
+		if !x.leaf {
+			result = append(result, collectSortedKeys(x.children[i])...)
+		}
+		result = append(result, x.keys[i])
+	}
+	if !x.leaf {
+		result = append(result, collectSortedKeys(x.children[len(x.keys)])...)
+	}
+
+	return result
+}
