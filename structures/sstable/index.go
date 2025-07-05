@@ -18,8 +18,9 @@ import (
 
 // IndexRecord struktura je jedan zapis u Index segmentu SSTable-a
 type IndexRecord struct {
-	Key    []byte
-	Offset int
+	Key         []byte
+	Offset      int
+	IndexOffset int
 }
 
 // IndexBlock struktura je skup IndexRecord-a
@@ -30,31 +31,31 @@ type Index struct {
 // NewIndexRecord pravi IndexRecord
 func NewIndexRecord(k []byte, offs int) IndexRecord {
 	record := IndexRecord{
-		Key:    k,
-		Offset: offs,
+		Key:         k,
+		Offset:      offs,
+		IndexOffset: -1, // Postavljamo IndexOffset na -1 jer jos uvek nije upisan u fajl
 	}
 	return record
 }
 
 func (ib *Index) WriteIndex(path string, conf *config.Config) error {
 	bm := block_organization.NewBlockManager(conf)
+	rec := 0
 	for _, record := range ib.Records {
-		err := record.WriteIndexRecord(path, bm)
+		i, err := record.WriteIndexRecord(path, bm)
 		if err != nil {
 			return err
 		}
+		ib.Records[rec].IndexOffset = i * conf.Block.BlockSize // Racunamo IndexOffset kao broj bloka pomnozen sa velicinom bloka
+		rec++
 	}
 
 	return nil
 }
 
-func (ir *IndexRecord) WriteIndexRecord(path string, bm *block_organization.BlockManager) error {
+func (ir *IndexRecord) WriteIndexRecord(path string, bm *block_organization.BlockManager) (int, error) {
 	serializedData, _ := ir.Serialize()
-	_, err := bm.AppendBlock(path, serializedData)
-	if err != nil {
-		return err
-	}
-	return nil
+	return bm.AppendBlock(path, serializedData)
 }
 
 func (ir *IndexRecord) Serialize() ([]byte, int) {
@@ -87,7 +88,7 @@ func ReadIndex(path string, conf *config.Config) (*Index, error) {
 		if err := record.Deserialize(block); err != nil {
 			return nil, err
 		}
-		record.Offset = blockNum * conf.Block.BlockSize // Racunamo ofset kao broj bloka pomnozen sa velicinom bloka
+		record.IndexOffset = blockNum * conf.Block.BlockSize // Racunamo ofset kao broj bloka pomnozen sa velicinom bloka
 		indexs.Records = append(indexs.Records, record)
 		blockNum++
 	}

@@ -45,6 +45,22 @@ func TestSSTable(t *testing.T) {
 	if len(sstable.Data.Records) != 5 {
 		t.Errorf("Expected 5 records in SSTable, got %d", len(sstable.Data.Records))
 	}
+	// Print SSTable details
+	println("SSTable created successfully with generation:", sstable.Gen)
+	// Print Data Records
+	for _, record := range sstable.Data.Records {
+		println("Key:", string(record.Key), "Value:", string(record.Value), "Timestamp:", record.Timestamp, "Tombstone:", record.Tombstone)
+	}
+	// Print Index Records
+	println("Index Records:")
+	for _, record := range sstable.Index.Records {
+		println("Key:", string(record.Key), "Offset:", record.Offset)
+	}
+	// Print Summary Records
+	println("Summary Records:")
+	for _, record := range sstable.Summary.Records {
+		println("FirstKey:", string(record.FirstKey), "LastKey:", string(record.LastKey), "IndexOffset:", record.IndexOffset, "NumberOfRecords:", record.NumberOfRecords)
+	}
 
 }
 
@@ -118,4 +134,15 @@ func TestSSTableRead(t *testing.T) {
 	for _, record := range sstable.Data.Records {
 		println("Key:", string(record.Key), "Value:", string(record.Value), "Timestamp:", record.Timestamp, "Tombstone:", record.Tombstone)
 	}
+	// Print Index Records
+	println("Index Records:")
+	for _, record := range sstable.Index.Records {
+		println("Key:", string(record.Key), "Offset:", record.Offset)
+	}
+	// Print Summary Records
+	println("Summary Records:")
+	for _, record := range sstable.Summary.Records {
+		println("FirstKey:", string(record.FirstKey), "LastKey:", string(record.LastKey), "IndexOffset:", record.IndexOffset, "NumberOfRecords:", record.NumberOfRecords)
+	}
+
 }
