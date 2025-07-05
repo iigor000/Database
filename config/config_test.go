@@ -111,13 +111,13 @@ func TestLoadConfigFile_InvalidBlockSize(t *testing.T) {
 }
 
 func TestLoadConfigFile_InvalidMaxSSTablesPerLevelLength(t *testing.T) {
-    tmpFile, err := ioutil.TempFile("", "config-*.json")
-    if err != nil {
-        t.Fatalf("failed to create temp file: %v", err)
-    }
-    defer os.Remove(tmpFile.Name())
+	tmpFile, err := ioutil.TempFile("", "config-*.json")
+	if err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
 
-    configJSON := `{
+	configJSON := `{
         "lsmtree": {
             "max_level": 3,
             "compaction_algorithm": "size_tiered",
@@ -126,19 +126,19 @@ func TestLoadConfigFile_InvalidMaxSSTablesPerLevelLength(t *testing.T) {
         }
     }`
 
-    if _, err := tmpFile.Write([]byte(configJSON)); err != nil {
-        t.Fatalf("failed to write config: %v", err)
-    }
-    tmpFile.Close()
+	if _, err := tmpFile.Write([]byte(configJSON)); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+	tmpFile.Close()
 
-    _, err = LoadConfigFile(tmpFile.Name())
-    if err == nil {
-        t.Fatalf("expected error for invalid max_sstables_per_level length, got nil")
-    }
-    expectedMsg := "the length of the list of 'MaxSSTablesPerLevel' and the length of LSMTree - 'MaxLevel' must be the same"
-    if err.Error() != expectedMsg {
-        t.Errorf("expected error message %q, got %q", expectedMsg, err.Error())
-    }
+	_, err = LoadConfigFile(tmpFile.Name())
+	if err == nil {
+		t.Fatalf("expected error for invalid max_sstables_per_level length, got nil")
+	}
+	expectedMsg := "the length of the list of 'MaxSSTablesPerLevel' and the length of LSMTree - 'MaxLevel' must be the same"
+	if err.Error() != expectedMsg {
+		t.Errorf("expected error message %q, got %q", expectedMsg, err.Error())
+	}
 }
 
 

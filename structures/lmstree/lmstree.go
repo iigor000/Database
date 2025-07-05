@@ -7,12 +7,16 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"sort"
 	"time"
 
 	"github.com/iigor000/database/config"
 	"github.com/iigor000/database/structures/block_organization"
+	"github.com/iigor000/database/structures/bloomfilter"
 	"github.com/iigor000/database/structures/cache"
+	"github.com/iigor000/database/structures/compression"
 	"github.com/iigor000/database/structures/memtable"
+	"github.com/iigor000/database/structures/merkle"
 	"github.com/iigor000/database/structures/sstable"
 )
 
@@ -47,38 +51,66 @@ func (l *LSMTree) Put(conf *config.Config, key []byte, value []byte) {
 }
 
 // Traži ključ u Memtable, Cache i SStables
-func (l *LSMTree) Get(key []byte) ([]byte, bool) {
+func (l *LSMTree) Get(conf *config.Config, key []byte) ([]byte, error) {
 
 	// Prvo proveri u Memtables
 	if value, exists := l.Memtables.Search(key); exists {
-		return value, true
+		return value, nil
 	}
 
 	// Proveri u Cache
 	if value, exists := l.Cache.Get(hex.EncodeToString(key)); exists {
-		return value, true
+		return value, nil
 	}
 
 	// Proveri u SSTable-ima (idemo od nižeg ka višim nivoima jer se u nižim nivoima nalaze noviji podaci)
 	for _, level := range l.SSTables {
-		for _, sstable := range level {
+		for _, sst := range level {
 			// Proveri Bloom filter pre pretrage
-			if !sstable.Filter.Read(key) {
+			if !sst.Filter.Read(key) {
 				continue // Ako Bloom filter ne sadrži ključ, pređi na naredni SSTable
 			}
 
-			// Pregledaj summary i index samo u SSTable-ovima koji postoje trenutno
-			if sst.ContainsKey(key) {
-				value, err := sst.ReadValue(key, l.BlockManager)
-				if err == nil {
-					l.Cache.Put(hex.EncodeToString(key), value)
-					return value, true
+			// Ako Bloom filter sadrži ključ, proveri u summary i index
+			for _, summary := range sst.Summary.Records {
+				if bytes.Compare(key, summary.FirstKey) < 0 || bytes.Compare(key, summary.LastKey) > 0 {
+					continue // Ključ nije u ovom summary bloku
+				}
+
+				// Ako je ključ unutar opsega summary, proveri index
+				// indexOffset je offset u Index segmentu gde se nalazi ovaj summary
+				start := summary.IndexOffset
+				end := start + summary.NumberOfRecords
+
+				indexBlock := sst.Index.Records[start:end]
+
+				// Binarno pretraži ključ u indexBlock-u
+				i := sort.Search(len(indexBlock), func(i int) bool {
+					return bytes.Compare(indexBlock[i].Key, key) >= 0
+				})
+
+				if i < len(indexBlock) && bytes.Equal(indexBlock[i].Key, key) {
+					dataOffset := indexBlock[i].Offset
+					path := fmt.Sprintf("%s/%d", conf.SSTable.SstableDirectory, sst.Gen)
+					filename := sstable.CreateFileName(path, sst.Gen, "Data", "db")
+
+					record, err := sst.Data.ReadRecordAtOffset(filename, conf, sst.CompressionKey, dataOffset)
+					if err != nil {
+						return nil, err
+					}
+
+					if record.Tombstone {
+						return nil, fmt.Errorf("record marked as deleted") // Ako je tombstone, ključ je obrisan
+					}
+
+					l.Cache.Put(hex.EncodeToString(key), record.Value)
+					return record.Value, nil
 				}
 			}
 		}
 	}
 
-	return nil, false
+	return nil, fmt.Errorf("key not found")
 }
 
 func (l *LSMTree) Delete(conf *config.Config, key []byte) {
@@ -231,39 +263,76 @@ func MergeSSTablesRecords(tables []*sstable.SSTable) []*sstable.DataRecord {
 }
 
 func BuildSSTableFromRecords(mergedRecords []*sstable.DataRecord, conf *config.Config, newGen int) *sstable.SSTable {
-	var newSST sstable.SSTable
-	newSST.UseCompression = conf.SSTable.UseCompression
-	newSST.Gen = newGen
+	newSST := sstable.NewEmptySSTable(conf, newGen)
 
 	dir := fmt.Sprintf("%s/%d", conf.SSTable.SstableDirectory, newGen)
 	if err := sstable.CreateDirectoryIfNotExists(dir); err != nil {
 		panic("Error creating directory for SSTable: " + err.Error())
 	}
 
-	newSST.Data, newSST.CompressionKey = sstable.buildDataFromRecords(mergedRecords, conf, newGen, dir)
-	newSST.Index = sstable.buildIndex(conf, newGen, dir, newSST.Data)
-	newSST.Summary = sstable.buildSummary(conf, newSST.Index)
-	newSST.Filter = sstable.buildBloomFilter(conf, newGen, dir, newSST.Data)
-
-	if newSST.UseCompression && newSST.CompressionKey != nil {
-		dictPath := sstable.CreateFileName(dir, newGen, "Dictionary", "db")
-		newSST.CompressionKey.Write(dictPath)
+	// Pripremi Data
+	db := &sstable.Data{}
+	dict := compression.NewDictionary()
+	for _, record := range mergedRecords {
+		db.Records = append(db.Records, *record)
+		if conf.SSTable.UseCompression {
+			dict.Add(record.Key)
+			dict.Add(record.Value)
+		}
 	}
+	newSST.Data = db
+	newSST.CompressionKey = dict
 
-	newSST.Metadata = sstable.buildMetadata(conf, newGen, dir, newSST.Data)
+	// Pripremi Index
+	ib := &sstable.Index{}
+	for _, record := range mergedRecords {
+		ir := sstable.NewIndexRecord(record.Key, record.Offset)
+		ib.Records = append(ib.Records, ir)
+	}
+	newSST.Index = ib
 
-	tocPath := sstable.CreateFileName(dir, newGen, "TOC", "txt")
-	tocData := fmt.Sprintf(
-		"Generation: %d\nData: %s\nIndex: %s\nFilter: %s\nMetadata: %s\n",
-		newSST.Gen,
-		sstable.CreateFileName(dir, newGen, "Data", "db"),
-		sstable.CreateFileName(dir, newGen, "Index", "db"),
-		sstable.CreateFileName(dir, newGen, "Filter", "db"),
-		sstable.CreateFileName(dir, newGen, "Metadata", "db"),
-	)
-	sstable.WriteTxtToFile(tocPath, tocData)
+	// Pripremi Summary
+	summaryLevel := conf.SSTable.SummaryLevel
+	sb := &sstable.Summary{}
+	for i := 0; i < len(ib.Records); i += summaryLevel {
+		// Pravimo summary sa onolko koliko je ostalo
+		end := i + summaryLevel
+		if end > len(ib.Records) {
+			end = len(ib.Records)
+		}
+		sr := sstable.SummaryRecord{
+			FirstKey:        ib.Records[i].Key,
+			LastKey:         ib.Records[end-1].Key,
+			IndexOffset:     ib.Records[i].IndexOffset,
+			NumberOfRecords: end - i,
+		}
+		sb.Records = append(sb.Records, sr)
+	}
+	newSST.Summary = sb
 
-	return &newSST
+	// Pripremi BloomFilter
+	fb := bloomfilter.MakeBloomFilter(len(mergedRecords), 0.5)
+	for _, record := range mergedRecords {
+		fb.Add(record.Key)
+		if !record.Tombstone {
+			fb.Add(record.Value)
+		}
+	}
+	newSST.Filter = fb
+
+	// Pripremi Merkle stablo
+	data := make([][]byte, len(mergedRecords))
+	for i, record := range mergedRecords {
+		data[i] = record.Key
+		if !record.Tombstone {
+			data[i] = append(data[i], record.Value...)
+		}
+	}
+	newSST.Metadata = merkle.NewMerkleTree(data)
+
+	sstable.WriteSSTable(newSST, dir, conf)
+
+	return newSST
 }
 
 func (l *LSMTree) sizeTieredCompaction(conf *config.Config, level int) {
@@ -311,9 +380,9 @@ func (l *LSMTree) leveledCompaction(conf *config.Config, level int) {
 		maxSizeBytes := int64(conf.LSMTree.BaseLevelSizeMBLimit*1024*1024) * int64(math.Pow(float64(conf.LSMTree.LevelSizeMultiplier), float64(level)))
 
 		var totalSize int64 = 0
-		for _, sst := range l.SSTables[level] {
-			totalSize += sst.SizeInBytes() // TODO SSTable treba da ima funkciju za veličinu
-		}
+		//for _, sst := range l.SSTables[level] {
+		// totalSize += sst.SizeInBytes() // TODO SSTable treba da ima funkciju za veličinu
+		//}
 
 		needCompaction = totalSize > maxSizeBytes
 	} else {

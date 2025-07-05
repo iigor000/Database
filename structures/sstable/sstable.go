@@ -272,6 +272,10 @@ func WriteSSTable(sstable *SSTable, dir string, conf *config.Config) error {
 		return fmt.Errorf("error writing bloom filter to file %s: %w", filterPath, err)
 	}
 
+	// Write Compression Dictionary
+	dictPath := CreateFileName(dir, sstable.Gen, "Dictionary", "db")
+	sstable.CompressionKey.Write(dictPath)
+
 	// Write Metadata
 	metadataPath := CreateFileName(path, sstable.Gen, "Metadata", "db")
 	err = sstable.Metadata.SerializeToBinaryFile(metadataPath)

@@ -252,3 +252,22 @@ func (dr *DataRecord) Deserialize(data []byte, dict *compression.Dictionary) err
 	}
 	return nil
 }
+
+func (d *Data) ReadRecordAtOffset(path string, conf *config.Config, dict *compression.Dictionary, offset int) (*DataRecord, error) {
+	bm := block_organization.NewBlockManager(conf)
+
+	// Računamo koji blok sadrži traženi ofset
+	blockNum := offset / conf.Block.BlockSize
+	blockData, err := bm.ReadBlock(path, blockNum)
+
+	if err != nil {
+		return nil, fmt.Errorf("error reading data block %d: %w", blockNum, err)
+	}
+
+	record := &DataRecord{}
+	if err := record.Deserialize(blockData, dict); err != nil {
+		return nil, fmt.Errorf("error deserializing data record at offset %d: %w", offset, err)
+	}
+
+	return record, nil
+}
