@@ -145,8 +145,11 @@ func (m *Memtable) Delete(key []byte) {
 
 func (m *Memtable) Search(key []byte) ([]byte, bool) {
 	entry, found := m.Structure.Search(key)
-	if !found || entry.Tombstone {
+	if !found {
 		return nil, false
+	}
+	if entry.Tombstone {
+		return nil, true
 	}
 	return entry.Value, true
 }

@@ -36,7 +36,9 @@ func (c *Cache) Get(key string) ([]byte, bool) {
 
 	if element, exists := c.Items[key]; exists {
 		c.List.MoveToFront(element) // Pomeri element na početak liste
-		return element.Value.(*CacheItem).Value, true
+		if element.Value != nil {
+			return element.Value.(*CacheItem).Value, true
+		}
 	}
 	return nil, false // Ako ključ ne postoji, vrati null i false
 }

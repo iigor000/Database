@@ -39,8 +39,14 @@ func NewLSMTree(cfg *config.Config) *LSMTree {
 
 // Dodaje ključ i vrednost u Memtable i pokreće algoritam za kompakciju ako je potrebno
 func (l *LSMTree) Put(conf *config.Config, key []byte, value []byte) {
+	tombstone := false // Označava da upisujemo novi ključ
+
+	if value == nil { // Ako je value nil, to znači da brišemo ključ
+		tombstone = true
+	}
+
 	// Prvo dodaj u Memtable
-	flushed := l.Memtables.Update(key, value, time.Now().UnixNano(), false)
+	flushed := l.Memtables.Update(key, value, time.Now().UnixNano(), tombstone)
 
 	// Zatim ubaci iz Cache
 	l.Cache.Put(hex.EncodeToString(key), value)
@@ -52,9 +58,11 @@ func (l *LSMTree) Put(conf *config.Config, key []byte, value []byte) {
 
 // Traži ključ u Memtable, Cache i SStables
 func (l *LSMTree) Get(conf *config.Config, key []byte) ([]byte, error) {
-
-	// Prvo proveri u Memtables
 	if value, exists := l.Memtables.Search(key); exists {
+		if value == nil {
+			return nil, fmt.Errorf("record marked as deleted") // ← OVO DODAJ
+		}
+		// on zavrsi ovde
 		return value, nil
 	}
 
@@ -114,12 +122,17 @@ func (l *LSMTree) Get(conf *config.Config, key []byte) ([]byte, error) {
 }
 
 func (l *LSMTree) Delete(conf *config.Config, key []byte) {
+
 	l.Put(conf, key, nil)
 	// prilikom flush-a, tombstone će se prepisati na prethodnu vrednost u disku jer ima veći timestamp
 	// Ako se pokuša Get() sa tim ključem, dobiće vrednost iz Memtable-a, što će biti nil, što znači da je obrisano
 }
 
 func (l *LSMTree) Compact(conf *config.Config, level int) {
+	if level >= conf.LSMTree.MaxLevel {
+		return // dostigli smo maksimalni nivo, nema više kompakcije
+	}
+
 	if conf.LSMTree.CompactionAlgorithm == "size_tiered" {
 		l.sizeTieredCompaction(conf, level)
 	} else if conf.LSMTree.CompactionAlgorithm == "leveled" {
@@ -338,12 +351,12 @@ func BuildSSTableFromRecords(mergedRecords []*sstable.DataRecord, conf *config.C
 func (l *LSMTree) sizeTieredCompaction(conf *config.Config, level int) {
 	maxSSTablesPerLevel := conf.LSMTree.MaxSSTablesPerLevel[level]
 
-	if len(l.SSTables[level]) < maxSSTablesPerLevel {
-		return // ništa za kompakciju
-	}
-
 	if level+1 >= len(l.SSTables) {
 		l.SSTables = append(l.SSTables, []*sstable.SSTable{}) // dodaj novi nivo ako ne postoji
+	}
+
+	if len(l.SSTables[level]) <= maxSSTablesPerLevel {
+		return // ništa za kompakciju
 	}
 
 	// izdvoj prvih N SSTable-ova i spoj ih

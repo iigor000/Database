@@ -178,9 +178,7 @@ func (s *SkipList) Search(key []byte) (*memtable.MemtableEntry, bool) {
 		return nil, false
 	}
 	entry := deserializeEntry(value)
-	if entry.Tombstone {
-		return nil, false
-	}
+
 	return &entry, true
 }
 
@@ -199,7 +197,7 @@ func (s *SkipList) Delete(key []byte) {
 func (s *SkipList) Update(key []byte, value []byte, timestamp int64, tombstone bool) {
 	entry, found := s.Search(key)
 	if !found {
-		s.Create(key, value, time.Now().UnixNano(), false)
+		s.Create(key, value, time.Now().UnixNano(), tombstone)
 		return
 	}
 	s.Remove(key)

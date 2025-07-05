@@ -37,7 +37,7 @@ func TestLSMTree_PutGetDelete(t *testing.T) {
 			BaseLevelSizeMBLimit:   10,
 			BaseSSTableLimit:       4,
 			LevelSizeMultiplier:    2,
-			MaxSSTablesPerLevel:    []int{4, 8},
+			MaxSSTablesPerLevel:    []int{2, 4},
 		},
 	}
 
@@ -78,3 +78,5 @@ func TestLSMTree_PutGetDelete(t *testing.T) {
 		t.Errorf("expected error after delete, got value: %s", string(got))
 	}
 }
+
+// TODO odraditi test za kompakciju kad Flush bude radio
