@@ -7,12 +7,8 @@ import (
 	"sync"
 
 	"github.com/iigor000/database/config"
+	"github.com/iigor000/database/structures/adapter"
 )
-
-type CacheItem struct {
-	Key   string
-	Value []byte
-}
 
 // Struktura koja predstavlja keš
 type Cache struct {
@@ -32,38 +28,49 @@ func NewCache(config *config.Config) *Cache {
 }
 
 // Funkcija za dobijanje vrednosti iz keša na osnovu ključa
-func (c *Cache) Get(key string) ([]byte, bool) {
+func (c *Cache) Get(key string) (*adapter.MemtableEntry, bool) {
 	c.Mu.Lock()
 	defer c.Mu.Unlock()
 
 	if element, exists := c.Items[key]; exists {
 		c.List.MoveToFront(element) // Pomeri element na početak liste
 		if element.Value != nil {
-			return element.Value.(*CacheItem).Value, true
+			if entry, ok := element.Value.(*adapter.MemtableEntry); ok {
+				return entry, true
+			}
 		}
 	}
 	return nil, false // Ako ključ ne postoji, vrati null i false
 }
 
-func (c *Cache) Put(key string, value []byte) {
+func (c *Cache) Put(entry adapter.MemtableEntry) {
 	c.Mu.Lock()
 	defer c.Mu.Unlock()
 
-	if element, exists := c.Items[key]; exists {
-		c.List.MoveToFront(element)              // Pomeri postojeći element na početak
-		element.Value.(*CacheItem).Value = value // Ažuriraj vrednost
+	keyStr := string(entry.Key)
+
+	if element, exists := c.Items[keyStr]; exists {
+		c.List.MoveToFront(element) // Pomeri postojeći element na početak
+		if existingEntry, ok := element.Value.(*adapter.MemtableEntry); ok {
+			existingEntry.Value = entry.Value         // Ažuriraj vrednost
+			existingEntry.Timestamp = entry.Timestamp // Ažuriraj i timestamp
+			existingEntry.Tombstone = entry.Tombstone // Ažuriraj i tombstone
+		}
 		return
 	}
 
 	if len(c.Items) >= c.Capacity { // Ako je kapacitet keša pun, izbaci poslednji element
 		lastElement := c.List.Back()
 		if lastElement != nil {
-			delete(c.Items, lastElement.Value.(*CacheItem).Key) // Ukloni najstariji element iz heš mape
-			c.List.Remove(lastElement)                          // Ukloni ga iz liste
+			if lastEntry, ok := lastElement.Value.(*adapter.MemtableEntry); ok {
+				delete(c.Items, string(lastEntry.Key)) // Ukloni najstariji element iz heš mape
+			}
+			c.List.Remove(lastElement) // Ukloni ga iz liste
 		}
 	}
 
-	newItem := &CacheItem{Key: key, Value: value}
-	element := c.List.PushFront(newItem) // Dodaj novi element na početak liste
-	c.Items[key] = element               // Dodaj ga u heš mapu
+	// Store a pointer to the entry, not the entry itself
+	entryPtr := &entry
+	element := c.List.PushFront(entryPtr) // Dodaj novi element na početak liste
+	c.Items[keyStr] = element             // Dodaj ga u heš mapu
 }

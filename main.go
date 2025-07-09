@@ -14,13 +14,26 @@ func main() {
 		return
 	}
 
-	db, err := fun.NewDatabase(config)
+	var username string
+
+	fmt.Println("NoSQL Database")
+	for {
+		fmt.Println("Enter username: ")
+		fmt.Scan(&username)
+		if username != "" {
+			break
+		}
+		fmt.Println("Username cannot be empty. Please try again.")
+	}
+
+	db, err := fun.NewDatabase(config, username)
 	if err != nil {
 		fmt.Println("Error creating database:", err)
 		return
 	}
 
-	fmt.Println("NoSQL Database")
+	fun.CreateBucket(db)
+
 	var exit bool = false
 	for !exit {
 
@@ -37,7 +50,7 @@ func main() {
 			var value string
 			fmt.Scan(&value)
 			// TODO: Implement PUT
-			err := db.Put(key, value)
+			err := db.Put(key, []byte(value))
 			if err != nil {
 				fmt.Println(err)
 				exit = true
@@ -50,7 +63,12 @@ func main() {
 			var key string
 			fmt.Scan(&key)
 			// TODO: Implement GET
-			value, found := db.Get(key)
+			value, found, err := db.Get(key)
+			if err != nil {
+				fmt.Println("Error retrieving data:", err)
+				exit = true
+				break
+			}
 			if !found {
 				fmt.Println("Entry not found")
 			} else {
