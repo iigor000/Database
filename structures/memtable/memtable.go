@@ -10,9 +10,10 @@ import (
 
 // Memtables struktura koja sadrzi vise Memtable-a
 type Memtables struct {
-	numberOfMemtables int
-	memtables         map[int]*Memtable
+	NumberOfMemtables int
+	Memtables         map[int]*Memtable
 	conf              *config.Config
+	GenToFlush        int // Generacija za flush, koristi se za SSTable
 }
 
 // Konstruktor za Memtables strukturu
@@ -28,8 +29,8 @@ func NewMemtables(conf *config.Config) *Memtables {
 		}
 	}
 	return &Memtables{
-		numberOfMemtables: conf.Memtable.NumberOfMemtables,
-		memtables:         memtables,
+		NumberOfMemtables: conf.Memtable.NumberOfMemtables,
+		Memtables:         memtables,
 		conf:              conf,
 	}
 }
@@ -42,8 +43,8 @@ func (m *Memtables) Update(key []byte, value []byte, timestamp int64, tombstone 
 	flushed := false
 	// Trazimo Memtable koji sadrzi dati kljuc i uaput proveravamo koji je prvi koji nije pun
 	// Ako ne nadjemo, onda cemo ga dodati u prvi koji nije pun
-	for i := 0; i < m.numberOfMemtables; i++ {
-		memtable := m.memtables[i]
+	for i := 0; i < m.NumberOfMemtables; i++ {
+		memtable := m.Memtables[i]
 		// Proveravamo da li postoji dati kljuc
 		_, exist := memtable.Search(key)
 		if exist {
@@ -58,19 +59,14 @@ func (m *Memtables) Update(key []byte, value []byte, timestamp int64, tombstone 
 	}
 	// Ako nismo nasli Memtable koji sadrzi dati kljuc, a imamo prvi koji nije pun, onda ga azuriramo
 	if firstNotFull != -1 {
-		m.memtables[firstNotFull].Update(key, value, timestamp, tombstone)
+		m.Memtables[firstNotFull].Update(key, value, timestamp, tombstone)
 	}
-	if firstNotFull == m.numberOfMemtables-1 {
-		if m.memtables[firstNotFull].Size >= m.memtables[firstNotFull].Capacity {
+	if firstNotFull == m.NumberOfMemtables-1 {
+		if m.Memtables[firstNotFull].Size >= m.Memtables[firstNotFull].Capacity {
 			// Ako je poslednji Memtable pun, onda ga flush-ujemo na disk
-			m.memtables[0].FlushToDisk()
+			//m.memtables[0].FlushToDisk(m.conf, m.genToFlush)
 			flushed = true
-			// Resetujemo redosled Memtable-a
-			for j := 0; j < m.numberOfMemtables-1; j++ {
-				m.memtables[j] = m.memtables[j+1]
-			}
-			// Dodajemo novi Memtable na kraj
-			m.memtables[m.numberOfMemtables-1] = NewMemtable(m.conf.Memtable.Structure == "skiplist", m.conf.Skiplist.MaxHeight, m.conf.Memtable.NumberOfEntries)
+
 		}
 	}
 
@@ -78,30 +74,31 @@ func (m *Memtables) Update(key []byte, value []byte, timestamp int64, tombstone 
 }
 
 // Delete uklanja kljuc iz Memtables
-func (m *Memtables) Delete(key []byte) {
+func (m *Memtables) Delete(key []byte) bool {
 	// Prolazimo kroz sve Memtable i brisemo
-	for i := 0; i < m.numberOfMemtables; i++ {
-		memtable := m.memtables[i]
+	for i := 0; i < m.NumberOfMemtables; i++ {
+		memtable := m.Memtables[i]
 		// Proveravamo da li postoji dati kljuc
 		_, exist := memtable.Search(key)
 		if exist {
 			// Ako postoji, brisemo ga
 			memtable.Delete(key)
-			return
+			return true
 		}
 	}
+	return false
 }
 
 // Search trazi kljuc u Memtables
-func (m *Memtables) Search(key []byte) ([]byte, bool) {
+func (m *Memtables) Search(key []byte) (*adapter.MemtableEntry, bool) {
 	// Prolazimo kroz sve Memtable i trazimo
-	for i := 0; i < m.numberOfMemtables; i++ {
-		memtable := m.memtables[i]
+	for i := 0; i < m.NumberOfMemtables; i++ {
+		memtable := m.Memtables[i]
 		// Proveravamo da li postoji dati kljuc
-		value, exist := memtable.Search(key)
+		record, exist := memtable.Search(key)
 		if exist {
 			// Ako postoji, vracamo vrednost
-			return value, true
+			return record, true
 		}
 	}
 	// Ako nismo nasli kljuc, vracamo false
@@ -143,15 +140,15 @@ func (m *Memtable) Delete(key []byte) {
 	m.Structure.Delete(key)
 }
 
-func (m *Memtable) Search(key []byte) ([]byte, bool) {
+func (m *Memtable) Search(key []byte) (*adapter.MemtableEntry, bool) {
 	entry, found := m.Structure.Search(key)
 	if !found {
 		return nil, false
 	}
 	if entry.Tombstone {
-		return nil, true
+		return entry, true
 	}
-	return entry.Value, true
+	return entry, true
 }
 
 func (m *Memtable) Print() {
@@ -165,7 +162,7 @@ func (m *Memtable) Print() {
 	}
 }
 
-func (m *Memtable) FlushToDisk() {
+func (m *Memtable) FlushToDisk(conf *config.Config, gen int) {
 	// Simulacija flush-a na disk
 	fmt.Println("Flushing Memtable to disk...")
 	m.Print()
@@ -173,4 +170,15 @@ func (m *Memtable) FlushToDisk() {
 	m.Structure.Clear()
 	//m.structure = skiplist.MakeSkipList(m.maxHeight)
 	m.Print()
+}
+
+func (m *Memtable) GetAllEntries() []adapter.MemtableEntry {
+	entries := make([]adapter.MemtableEntry, 0, m.Size)
+	for _, key := range m.Keys {
+		entry, found := m.Structure.Search(key)
+		if found && !entry.Tombstone {
+			entries = append(entries, *entry)
+		}
+	}
+	return entries
 }

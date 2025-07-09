@@ -1,5 +1,7 @@
 package cache
 
+// TODO: Dodati error handling
+
 import (
 	"container/list"
 	"sync"

@@ -88,7 +88,7 @@ func TestMemtables(t *testing.T) {
 	ms := NewMemtables(&cf)
 	for i := 0; i < cf.Memtable.NumberOfMemtables; i++ {
 		fmt.Printf("Memtable %d:\n", i)
-		ms.memtables[i].Print()
+		ms.Memtables[i].Print()
 	}
 	fmt.Println("Adding entries to Memtables:")
 	ms.Update([]byte("1"), []byte("one"), 1, false)
@@ -101,7 +101,7 @@ func TestMemtables(t *testing.T) {
 	ms.Update([]byte("8"), []byte("eight"), 8, false)
 	for i := 0; i < cf.Memtable.NumberOfMemtables; i++ {
 		fmt.Printf("Memtable %d after updates:\n", i)
-		ms.memtables[i].Print()
+		ms.Memtables[i].Print()
 	}
 	fmt.Println("Updating keys in Memtables:")
 	ms.Update([]byte("1"), []byte("newone"), 10, false)
@@ -114,7 +114,7 @@ func TestMemtables(t *testing.T) {
 	ms.Update([]byte("8"), []byte("neweight"), 17, false)
 	for i := 0; i < cf.Memtable.NumberOfMemtables; i++ {
 		fmt.Printf("Memtable %d after updates:\n", i)
-		ms.memtables[i].Print()
+		ms.Memtables[i].Print()
 	}
 	fmt.Println("Searching keys in Memtables:")
 	value, found := ms.Search([]byte("1"))
@@ -149,7 +149,7 @@ func TestMemtables(t *testing.T) {
 	fmt.Println("Memtables contents after CRUD operations:")
 	for i := 0; i < cf.Memtable.NumberOfMemtables; i++ {
 		fmt.Printf("Memtable %d:\n", i)
-		ms.memtables[i].Print()
+		ms.Memtables[i].Print()
 	}
 
 }
@@ -172,13 +172,13 @@ func TestFlushMemtables(t *testing.T) {
 	// Print Memtables before flush
 	for i := 0; i < cf.Memtable.NumberOfMemtables; i++ {
 		fmt.Printf("Memtable %d before flush:\n", i)
-		ms.memtables[i].Print()
+		ms.Memtables[i].Print()
 	}
 	ms.Update([]byte("4"), []byte("four"), 4, false)
 	ms.Update([]byte("5"), []byte("five"), 5, false)
 	// Print Memtables after flush
 	for i := 0; i < cf.Memtable.NumberOfMemtables; i++ {
 		fmt.Printf("Memtable %d after flush:\n", i)
-		ms.memtables[i].Print()
+		ms.Memtables[i].Print()
 	}
 }
