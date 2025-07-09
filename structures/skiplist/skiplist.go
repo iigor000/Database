@@ -51,7 +51,7 @@ func MakeSkipList(maxHeight int) *SkipList {
 func (s *SkipList) Update1(key []byte, value []byte) {
 	nodes := s.SearchNodes(key)
 	for _, node := range nodes {
-		if node.next != nil && bytes.Compare(node.next.key, key) != 0 {
+		if node.next != nil && !bytes.Equal(node.next.key, key) {
 			node.next.value = value
 		}
 	}
@@ -60,7 +60,7 @@ func (s *SkipList) Update1(key []byte, value []byte) {
 func (s *SkipList) Search1(value []byte) []byte {
 	node := s.root
 
-	for bytes.Compare(node.key, value) != 0 {
+	for !bytes.Equal(node.key, value) {
 		if node.next == nil || bytes.Compare(node.next.key, value) == 1 {
 			if node.down != nil {
 				node = node.down
@@ -72,7 +72,7 @@ func (s *SkipList) Search1(value []byte) []byte {
 		}
 	}
 
-	if bytes.Compare(node.key, value) != 0 {
+	if !bytes.Equal(node.key, value) {
 		return []byte("")
 	}
 
@@ -82,7 +82,7 @@ func (s *SkipList) Search1(value []byte) []byte {
 func (s *SkipList) SearchNodes(value []byte) []*Node {
 	node := s.root
 	nodes := make([]*Node, 0)
-	for bytes.Compare(node.key, value) != 0 && node.down != nil {
+	for !bytes.Equal(node.key, value) && node.down != nil {
 		if node.next == nil || bytes.Compare(node.next.key, value) == 1 {
 			nodes = append(nodes, node)
 			node = node.down
@@ -133,11 +133,11 @@ func (s *SkipList) SearchBeforeNodes(key []byte) []*Node {
 		}
 	}
 
-	for node.next != nil && bytes.Compare(node.next.key, key) != 0 {
+	for node.next != nil && !bytes.Equal(node.next.key, key) {
 		node = node.next
 	}
 
-	if node.next != nil && bytes.Compare(node.next.key, key) != 0 {
+	if node.next != nil && !bytes.Equal(node.next.key, key) {
 		panic("key not found")
 	}
 
@@ -150,7 +150,7 @@ func (s *SkipList) Remove(key []byte) {
 	nodes := s.SearchBeforeNodes(key)
 
 	for _, node := range nodes {
-		if node.next != nil && bytes.Compare(node.next.key, key) == 0 {
+		if node.next != nil && bytes.Equal(node.next.key, key) {
 			node.next = node.next.next
 		}
 		s.size--

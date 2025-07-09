@@ -50,7 +50,12 @@ func main() {
 			var key string
 			fmt.Scan(&key)
 			// TODO: Implement GET
-			value, found := db.Get(key)
+			value, found, err := db.Get(key)
+			if err != nil {
+				fmt.Println("Error retrieving data:", err)
+				exit = true
+				break
+			}
 			if !found {
 				fmt.Println("Entry not found")
 			} else {

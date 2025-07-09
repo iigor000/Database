@@ -43,7 +43,7 @@ func (db *Database) Put(key string, value string) error {
 
 		sstable.FlushSSTable(db.config, *db.memtables.Memtables[db.memtables.NumberOfMemtables-1], db.memtables.GenToFlush)
 
-		//recordsToCache := db.memtables.Memtables[db.memtables.NumberOfMemtables-1].GetAllEntries()
+		recordsToCache := db.memtables.Memtables[db.memtables.NumberOfMemtables-1].GetAllEntries()
 
 		// Resetujemo redosled Memtable-a
 		for j := 0; j < db.memtables.NumberOfMemtables-1; j++ {
@@ -60,42 +60,57 @@ func (db *Database) Put(key string, value string) error {
 
 		//TODO: Zapisati u wal da je flush uradjen
 
-		// for _, record := range recordsToCache {
-		// 	// Dodajemo u cache
-		// 	db.cache.Put(string(record.Key), record.Value)
-		// }
+		for _, record := range recordsToCache {
+			// Dodajemo u cache
+			if _, found := db.cache.Get(string(record.Key)); found {
+				db.cache.Put(record)
+			}
+		}
 
 	}
 
 	return nil
 }
 
-func (db *Database) Get(key string) ([]byte, bool) {
+func (db *Database) Get(key string) ([]byte, bool, error) {
 	keyByte := []byte(key)
 
+	// Proveravamo da li je u Memtable-u
 	entry, found := db.memtables.Search(keyByte)
 	if found {
 		if !entry.Tombstone {
-			return entry.Value, true
-		} else {
-			return nil, false
+			return entry.Value, true, nil
 		}
+		return nil, false, nil
 	}
 
-	// TODO: Uzeti iz cacha ako je tu, cache bi trebao da sadrzi i tombstone i timestamp
-	//entry := db.cache.Get(key)
+	// Proveravamo da li je u cache-u
+	entry, found = db.cache.Get(key)
+	if found {
+		if !entry.Tombstone {
+			return entry.Value, true, nil
+		}
+		return nil, false, nil
+	}
 
 	// TODO: Uzeti iz lsm stabla
 
-	// TODO: Ako ga nadjemo na kraju, stavljamo ga u cache ako nije vec u njemu
+	// Ako se nalazi u LSM stablu, stavljamo ga u cache
+	if entry != nil {
+		db.cache.Put(*entry)
+		if !entry.Tombstone {
+			return entry.Value, true, nil
+		}
+	}
 
-	return nil, false
+	return nil, false, nil
 }
 
 func (db *Database) Delete(key string) error {
 
 	// TODO: Napisati u wal da se brise entry
 
+	// Brisanje iz memtable-a
 	found := db.memtables.Delete([]byte(key))
 	if !found {
 		err := db.Put(key, "")
