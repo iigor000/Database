@@ -1,6 +1,7 @@
 package fun
 
 import (
+	"errors"
 	"time"
 
 	"github.com/iigor000/database/config"
@@ -16,9 +17,10 @@ type Database struct {
 	memtables *memtable.Memtables
 	config    *config.Config
 	cache     *cache.Cache
+	username  string
 }
 
-func NewDatabase(config *config.Config) (*Database, error) {
+func NewDatabase(config *config.Config, username string) (*Database, error) {
 	memtables := memtable.NewMemtables(config)
 
 	cache := cache.NewCache(config)
@@ -27,10 +29,24 @@ func NewDatabase(config *config.Config) (*Database, error) {
 		memtables: memtables,
 		config:    config,
 		cache:     cache,
+		username:  username,
 	}, nil
 }
 
-func (db *Database) Put(key string, value string) error {
+func (db *Database) Put(key string, value []byte) error {
+	// Proveravamp da li po token bucketu korisnik moze da unese podatke
+	allow, err := CheckBucket(db)
+	if err != nil {
+		return err
+	}
+	if !allow {
+		return errors.New("user has reached the rate limit") // Korisnik ne moze da unese podatke
+	}
+
+	return db.put(key, value)
+}
+
+func (db *Database) put(key string, value []byte) error {
 
 	// TODO: Staviti write ahead log zapis
 
@@ -73,6 +89,20 @@ func (db *Database) Put(key string, value string) error {
 }
 
 func (db *Database) Get(key string) ([]byte, bool, error) {
+	// Proveravamp da li po token bucketu korisnik moze da unese podatke
+	allow, err := CheckBucket(db)
+	if err != nil {
+		return nil, false, err
+	}
+	if !allow {
+		return nil, false, errors.New("user has reached the rate limit") // Korisnik ne moze da unese podatke
+	}
+
+	return db.get(key)
+}
+
+func (db *Database) get(key string) ([]byte, bool, error) {
+
 	keyByte := []byte(key)
 
 	// Proveravamo da li je u Memtable-u
@@ -107,13 +137,26 @@ func (db *Database) Get(key string) ([]byte, bool, error) {
 }
 
 func (db *Database) Delete(key string) error {
+	// Proveravamp da li po token bucketu korisnik moze da unese podatke
+	allow, err := CheckBucket(db)
+	if err != nil {
+		return err
+	}
+	if !allow {
+		return errors.New("user has reached the rate limit") // Korisnik ne moze da unese podatke
+	}
+
+	return db.delete(key)
+}
+
+func (db *Database) delete(key string) error {
 
 	// TODO: Napisati u wal da se brise entry
 
 	// Brisanje iz memtable-a
 	found := db.memtables.Delete([]byte(key))
 	if !found {
-		err := db.Put(key, "")
+		err := db.Put(key, []byte{})
 		if err != nil {
 			return err
 		}
