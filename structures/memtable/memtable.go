@@ -19,19 +19,15 @@ type Memtables struct {
 // Konstruktor za Memtables strukturu
 func NewMemtables(conf *config.Config) *Memtables {
 	memtables := make(map[int]*Memtable)
-	if conf.Memtable.Structure == "skiplist" {
-		for i := 0; i < conf.Memtable.NumberOfMemtables; i++ {
-			memtables[i] = NewMemtable(true, conf.Skiplist.MaxHeight, conf.Memtable.NumberOfEntries)
-		}
-	} else {
-		for i := 0; i < conf.Memtable.NumberOfMemtables; i++ {
-			memtables[i] = NewMemtable(false, 0, conf.Memtable.NumberOfEntries)
-		}
+	for i := 0; i < conf.Memtable.NumberOfMemtables; i++ {
+		memtables[i] = NewMemtable(conf, conf.Memtable.NumberOfEntries)
 	}
+
 	return &Memtables{
 		NumberOfMemtables: conf.Memtable.NumberOfMemtables,
 		Memtables:         memtables,
 		conf:              conf,
+		GenToFlush:        0, // Inicijalizujemo generaciju za flush na 0
 	}
 }
 
@@ -114,12 +110,13 @@ type Memtable struct {
 }
 
 // Konstruktor za Memtable strukturu, opcija za implementaciju skip listom ili binarnim stablom
-func NewMemtable(useSkipList bool, maxHeight int, n int) *Memtable {
+func NewMemtable(conf *config.Config, n int) *Memtable {
 	var struc adapter.MemtableStructure
-	if useSkipList {
-		struc = skiplist.MakeSkipList(maxHeight)
+	if conf.Memtable.Structure == "skiplist" {
+		struc = skiplist.MakeSkipList(conf.Skiplist.MaxHeight)
 	} else {
-		//a = bst.NewBST()
+		//struc = btree.NewBTree(conf.BTree.MinSize)
+		struc = skiplist.MakeSkipList(conf.Skiplist.MaxHeight)
 	}
 	return &Memtable{Structure: struc, Size: 0, Capacity: n}
 }
@@ -160,16 +157,6 @@ func (m *Memtable) Print() {
 			}
 		}
 	}
-}
-
-func (m *Memtable) FlushToDisk(conf *config.Config, gen int) {
-	// Simulacija flush-a na disk
-	fmt.Println("Flushing Memtable to disk...")
-	m.Print()
-	// Ovde bi se podaci upisivali na disk (u SSTable)
-	m.Structure.Clear()
-	//m.structure = skiplist.MakeSkipList(m.maxHeight)
-	m.Print()
 }
 
 func (m *Memtable) GetAllEntries() []adapter.MemtableEntry {

@@ -51,7 +51,7 @@ func (db *Database) Put(key string, value string) error {
 		}
 
 		// Dodajemo novi Memtable na kraj
-		db.memtables.Memtables[db.memtables.NumberOfMemtables-1] = memtable.NewMemtable(db.config.Memtable.Structure == "skiplist", db.config.Skiplist.MaxHeight, db.config.Memtable.NumberOfEntries)
+		db.memtables.Memtables[db.memtables.NumberOfMemtables-1] = memtable.NewMemtable(db.config, db.config.Memtable.NumberOfEntries)
 
 		//TODO: Povecati generaciju za flush
 		db.memtables.GenToFlush++

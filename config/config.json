@@ -15,6 +15,9 @@
   "skiplist": {
     "max_height": 16
   },
+  "btree": {
+    "min_size": 16
+  },
   "sstable": {
     "use_compression": true,
     "summary_level": 10,

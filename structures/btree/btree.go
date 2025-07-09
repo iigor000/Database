@@ -423,3 +423,7 @@ func collectSortedKeys(x *Node) []byte {
 
 	return result
 }
+
+func (t *BTree) Clear() {
+	t.root = nil
+}

@@ -13,6 +13,7 @@ type Config struct {
 	Wal      WalConfig      `json:"wal"`      // Konfiguracija WAL-a
 	Memtable MemtableConfig `json:"memtable"` // Konfiguracija memtable-a
 	Skiplist SkiplistConfig `json:"skiplist"` // Konfiguracija skip liste
+	BTree    BTreeConfig    `json:"btree"`    // Konfiguracija binarnog stabla
 	SSTable  SSTableConfig  `json:"sstable"`  // Konfiguracija SSTable-a
 	Cache    CacheConfig    `json:"cache"`    // Konfiguracija kes memorije
 	LSMTree  LSMTreeConfig  `json:"lsmtree"`  // Konfiguracija LSM stabla
@@ -58,6 +59,10 @@ type LSMTreeConfig struct {
 	MaxSSTablesPerLevel    []int  `json:"max_sstables_per_level"`    // (koristi se AKO je algoritam za kompakciju "size_tiered") Maksimalan broj SSTable-ova po nivou
 }
 
+type BTreeConfig struct {
+	MinSize int `json:"min_size"` // Minimalna velicina binarnog stabla
+}
+
 func LoadConfigFile(path string) (*Config, error) {
 	defaultConfig := &Config{
 		Block: BlockConfig{
@@ -75,6 +80,9 @@ func LoadConfigFile(path string) (*Config, error) {
 		},
 		Skiplist: SkiplistConfig{
 			MaxHeight: 16,
+		},
+		BTree: BTreeConfig{
+			MinSize: 16,
 		},
 		SSTable: SSTableConfig{
 			UseCompression:   true,

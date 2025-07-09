@@ -62,12 +62,15 @@ func buildData(mem memtable.Memtable, conf *config.Config, gen int, path string)
 			db.Records = append(db.Records, dr)
 			if conf.SSTable.UseCompression {
 				dict.Add(entry.Key)
-				dict.Add(entry.Value)
 			}
 		}
 	}
 	filename := CreateFileName(path, gen, "Data", "db")
-	db.WriteData(filename, conf, dict)
+	if conf.SSTable.UseCompression {
+		db.WriteData(filename, conf, dict)
+	} else {
+		db.WriteData(filename, conf, nil)
+	}
 
 	return db, dict
 }

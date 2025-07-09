@@ -86,15 +86,10 @@ func (dr *DataRecord) Serialize(dict *compression.Dictionary) ([]byte, error) {
 		serialized_data = append(serialized_data, byte(index>>56), byte(index>>48), byte(index>>40), byte(index>>32),
 			byte(index>>24), byte(index>>16), byte(index>>8), byte(index))
 
-		// Upisujemo indeks vrednosti u recniku
+		// Upisujemo vrednost samo ako nije logicki obrisana
 		if !dr.Tombstone {
-			index, found = dict.SearchKey(dr.Value)
-			if !found {
-				return nil, fmt.Errorf("value not found in dictionary")
-			}
-			serialized_data = append(serialized_data, byte(index>>56), byte(index>>48), byte(index>>40), byte(index>>32),
-				byte(index>>24), byte(index>>16), byte(index>>8), byte(index))
-
+			serialized_data = append(serialized_data, byte(len(dr.Value)))
+			serialized_data = append(serialized_data, dr.Value...)
 		}
 	}
 	return serialized_data, nil
@@ -123,7 +118,7 @@ func (dr *DataRecord) calcCRC() uint32 {
 	return crc32.ChecksumIEEE(data)
 }
 
-// Upisuje DataBlock u fajl
+// Upisuje Data u fajl
 func (db *Data) WriteData(path string, conf *config.Config, dict *compression.Dictionary) (error, *Data) {
 	bm := block_organization.NewBlockManager(conf)
 	rec := 0
@@ -218,8 +213,9 @@ func (dr *DataRecord) Deserialize(data []byte, dict *compression.Dictionary) err
 			dr.Value = nil // Logicki obrisan zapis nema vrednost
 		}
 	} else {
-		if len(data) < 8 { // Ocekivano je da imamo dva indeksa po 8 bajtova
-			return fmt.Errorf("data too short to read key and value indices")
+		// Ocekivano je da imamo keyindex, valuesize i value
+		if len(data) < 8 {
+			return fmt.Errorf("data too short to read key index")
 		}
 
 		keyIndex := binary.LittleEndian.Uint64(data[:8])
@@ -232,16 +228,16 @@ func (dr *DataRecord) Deserialize(data []byte, dict *compression.Dictionary) err
 		}
 
 		if !dr.Tombstone {
-			if len(data) < 8 {
-				return fmt.Errorf("data too short to read value index")
+			if len(data) < 1 {
+				return fmt.Errorf("data too short to read value size")
 			}
-
-			valueIndex := binary.LittleEndian.Uint64(data[:8])
-			data = data[8:]
-			dr.Value, found = dict.SearchIndex(int(valueIndex))
-			if !found {
-				return fmt.Errorf("value index %d not found in dictionary", valueIndex)
+			valueSize := int(data[0])
+			data = data[1:]
+			if len(data) < valueSize {
+				return fmt.Errorf("data too short to read value")
 			}
+			dr.Value = data[:valueSize]
+			data = data[valueSize:]
 		} else {
 			dr.Value = nil // Logicki obrisan zapis nema vrednost
 		}

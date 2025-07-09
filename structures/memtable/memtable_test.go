@@ -8,7 +8,15 @@ import (
 )
 
 func TestMemtableCRUD(t *testing.T) {
-	m := NewMemtable(true, 3, 9)
+	m := NewMemtable(&config.Config{
+		Memtable: config.MemtableConfig{
+			NumberOfEntries: 5,
+			Structure:       "skiplist",
+		},
+		Skiplist: config.SkiplistConfig{
+			MaxHeight: 3,
+		},
+	}, 5)
 	// Test initial state
 	if len(m.Keys) != 0 {
 		t.Error("Expected empty Memtable at initialization")
@@ -29,23 +37,28 @@ func TestMemtableCRUD(t *testing.T) {
 	m.Update([]byte("12"), []byte("newtwelve"), 16, false)
 	fmt.Println("Updated keys 1, 4, 7, 12 with new values")
 
-	value, found := m.Search([]byte("1"))
+	entry, found := m.Search([]byte("1"))
+	value := entry.Value
 	if !found || string(value) != "newone" {
 		t.Error("Expected newone")
 	}
-	value, found = m.Search([]byte("4"))
+	entry, found = m.Search([]byte("4"))
+	value = entry.Value
 	if !found || string(value) != "newfour" {
 		t.Error("Expected newfour")
 	}
-	value, found = m.Search([]byte("7"))
+	entry, found = m.Search([]byte("7"))
+	value = entry.Value
 	if !found || string(value) != "newseven" {
 		t.Error("Expected newseven")
 	}
-	value, found = m.Search([]byte("12"))
+	entry, found = m.Search([]byte("12"))
+	value = entry.Value
 	if !found || string(value) != "newtwelve" {
 		t.Error("Expected newtwelve")
 	}
-	value, found = m.Search([]byte("10"))
+	entry, found = m.Search([]byte("10"))
+	value = entry.Value
 	if !found || string(value) != "ten" {
 		t.Error("Expected ten")
 	}
@@ -57,18 +70,18 @@ func TestMemtableCRUD(t *testing.T) {
 
 	fmt.Println("Deleting 4, 10, and 12 from Memtable:")
 	m.Delete([]byte("4"))
-	_, found = m.Search([]byte("4"))
-	if found {
+	ent, found := m.Search([]byte("4"))
+	if !ent.Tombstone {
 		t.Error("Expected not found for deleted key 4")
 	}
 	m.Delete([]byte("10"))
-	_, found = m.Search([]byte("10"))
-	if found {
+	ent, found = m.Search([]byte("10"))
+	if !ent.Tombstone {
 		t.Error("Expected not found for deleted key 10")
 	}
 	m.Delete([]byte("12"))
-	_, found = m.Search([]byte("12"))
-	if found {
+	ent, found = m.Search([]byte("12"))
+	if !ent.Tombstone {
 		t.Error("Expected not found for deleted key 12")
 	}
 
@@ -117,13 +130,15 @@ func TestMemtables(t *testing.T) {
 		ms.Memtables[i].Print()
 	}
 	fmt.Println("Searching keys in Memtables:")
-	value, found := ms.Search([]byte("1"))
+	entry, found := ms.Search([]byte("1"))
+	value := entry.Value
 	if !found {
 		t.Error("Expected to find key 1")
 	} else if string(value) != "newone" {
 		t.Error("Expected value 'newone' for key 1, got", string(value))
 	}
-	value, found = ms.Search([]byte("2"))
+	entry, found = ms.Search([]byte("2"))
+	value = entry.Value
 	if !found {
 		t.Error("Expected to find key 2")
 	}
@@ -132,18 +147,18 @@ func TestMemtables(t *testing.T) {
 	}
 	fmt.Println("Deleting keys from Memtables:")
 	ms.Delete([]byte("1"))
-	_, found = ms.Search([]byte("1"))
-	if found {
+	ent, found := ms.Search([]byte("1"))
+	if !ent.Tombstone {
 		t.Error("Expected not found for deleted key 1")
 	}
 	ms.Delete([]byte("2"))
-	_, found = ms.Search([]byte("2"))
-	if found {
+	ent, found = ms.Search([]byte("2"))
+	if !ent.Tombstone {
 		t.Error("Expected not found for deleted key 2")
 	}
 	ms.Delete([]byte("3"))
-	_, found = ms.Search([]byte("3"))
-	if found {
+	ent, found = ms.Search([]byte("3"))
+	if !ent.Tombstone {
 		t.Error("Expected not found for deleted key 3")
 	}
 	fmt.Println("Memtables contents after CRUD operations:")
@@ -152,33 +167,4 @@ func TestMemtables(t *testing.T) {
 		ms.Memtables[i].Print()
 	}
 
-}
-
-// Flush Memtables to disk
-func TestFlushMemtables(t *testing.T) {
-	cf := config.Config{Memtable: config.MemtableConfig{
-		NumberOfMemtables: 2,
-		NumberOfEntries:   2,
-		Structure:         "skiplist",
-	},
-		Skiplist: config.SkiplistConfig{
-			MaxHeight: 3},
-	}
-	ms := NewMemtables(&cf)
-	// Add some entries to Memtables
-	ms.Update([]byte("1"), []byte("one"), 1, false)
-	ms.Update([]byte("2"), []byte("two"), 2, false)
-	ms.Update([]byte("3"), []byte("three"), 3, false)
-	// Print Memtables before flush
-	for i := 0; i < cf.Memtable.NumberOfMemtables; i++ {
-		fmt.Printf("Memtable %d before flush:\n", i)
-		ms.Memtables[i].Print()
-	}
-	ms.Update([]byte("4"), []byte("four"), 4, false)
-	ms.Update([]byte("5"), []byte("five"), 5, false)
-	// Print Memtables after flush
-	for i := 0; i < cf.Memtable.NumberOfMemtables; i++ {
-		fmt.Printf("Memtable %d after flush:\n", i)
-		ms.Memtables[i].Print()
-	}
 }
