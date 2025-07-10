@@ -6,6 +6,7 @@ import (
 	"hash/crc32"
 
 	"github.com/iigor000/database/config"
+	"github.com/iigor000/database/structures/adapter"
 	"github.com/iigor000/database/structures/block_organization"
 	"github.com/iigor000/database/structures/compression"
 )
@@ -26,7 +27,8 @@ type DataRecord struct {
 
 // Data struktura je skup DataRecord-a
 type Data struct {
-	Records []DataRecord
+	Records  []DataRecord
+	FilePath string // Putanja do fajla gde su podaci upisani
 }
 
 // NewDataRecord pravi DataRecord iz memtable entrija
@@ -266,4 +268,24 @@ func (d *Data) ReadRecordAtOffset(path string, conf *config.Config, dict *compre
 	}
 
 	return record, nil
+}
+
+// Pomocna funkcija za Iterate
+func (d *Data) ReadRecord(bm *block_organization.BlockManager, blockNumber int) (adapter.MemtableEntry, int) {
+	blockData, err := bm.ReadBlock(d.FilePath, blockNumber)
+	if err != nil {
+		return adapter.MemtableEntry{}, -1
+	}
+
+	record := DataRecord{}
+	if err := record.Deserialize(blockData, nil); err != nil {
+		return adapter.MemtableEntry{}, -1
+	}
+	record.Offset = blockNumber * bm.BlockSize
+	return adapter.MemtableEntry{
+		Key:       record.Key,
+		Value:     record.Value,
+		Timestamp: record.Timestamp,
+		Tombstone: record.Tombstone,
+	}, record.Offset + 1*bm.BlockSize
 }

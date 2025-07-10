@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/iigor000/database/config"
+	"github.com/iigor000/database/structures/adapter"
 	"github.com/iigor000/database/structures/block_organization"
 	"github.com/iigor000/database/structures/bloomfilter"
 	"github.com/iigor000/database/structures/compression"
@@ -316,4 +317,30 @@ func NewEmptySSTable(conf *config.Config, generation int) *SSTable {
 		sstable.CompressionKey = compression.NewDictionary()
 	}
 	return sstable
+}
+
+// Pomocna funkcija za PreffixIterate
+// Trazi prvi sledeci zapis koji pocinje sa prefiksom
+// Prvo trazi u Summary, onda u Indexu, a zatim u Data segmentu
+func (s *SSTable) ReadRecordWithPrefix(bm *block_organization.BlockManager, blockNumber int, prefix string) (adapter.MemtableEntry, int) {
+	sumRec, err := s.Summary.FindSummaryRecordWithKey(prefix) // Prvo trazimo u Summary
+	if err != nil {
+		return adapter.MemtableEntry{}, -1
+	}
+	// Ako smo nasli u Summaryu, trazimo njegov offset u Data fajlu u Indexu
+	dataOffset, err := s.Index.FindDataOffsetWithKey(sumRec.IndexOffset, []byte(prefix), bm)
+	if err != nil {
+		return adapter.MemtableEntry{}, -1
+	}
+	dataRec, nextBlock := s.Data.ReadRecord(bm, dataOffset/bm.BlockSize) // Citanje iz Data fajla
+	if dataRec.Key == nil {
+		return adapter.MemtableEntry{}, -1
+	}
+	return adapter.MemtableEntry{
+		Key:       dataRec.Key,
+		Value:     dataRec.Value,
+		Timestamp: dataRec.Timestamp,
+		Tombstone: dataRec.Tombstone,
+	}, nextBlock
+
 }

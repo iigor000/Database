@@ -22,7 +22,7 @@ type Database struct {
 
 func NewDatabase(config *config.Config, username string) (*Database, error) {
 	memtables := memtable.NewMemtables(config)
-
+	// TODO: Treba da se ucita BloomFilter i Summary iz SSTable-a
 	cache := cache.NewCache(config)
 
 	return &Database{

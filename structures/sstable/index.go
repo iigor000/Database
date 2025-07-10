@@ -1,6 +1,7 @@
 package sstable
 
 import (
+	"bytes"
 	"fmt"
 
 	"github.com/iigor000/database/config"
@@ -25,7 +26,8 @@ type IndexRecord struct {
 
 // IndexBlock struktura je skup IndexRecord-a
 type Index struct {
-	Records []IndexRecord
+	Records  []IndexRecord
+	FilePath string // Putanja do fajla gde su podaci upisani
 }
 
 // NewIndexRecord pravi IndexRecord
@@ -117,4 +119,44 @@ func (ir *IndexRecord) Deserialize(data []byte) error {
 	ir.Offset = int(data[0])<<24 | int(data[1])<<16 | int(data[2])<<8 | int(data[3])
 
 	return nil
+}
+
+// Pomocna funkcija za PrefixIterate
+// Index segment nije ucitan iz fajla
+func (ib *Index) FindDataOffsetWithKey(indexOffset int, key []byte, bm *block_organization.BlockManager) (int, error) {
+	indexRecord := IndexRecord{}
+	found := -1
+	bnum := indexOffset / bm.BlockSize
+	for {
+		serlzdIndexRec, err := bm.ReadBlock(ib.FilePath, bnum)
+		if err != nil {
+			if err.Error() == "EOF" {
+				break // Kraj fajla
+			}
+			return -1, fmt.Errorf("error reading index block: %w", err)
+		}
+
+		if len(serlzdIndexRec) == 0 {
+			return -1, fmt.Errorf("key not found in index")
+		}
+		if err := indexRecord.Deserialize(serlzdIndexRec); err != nil {
+			return -1, fmt.Errorf("error deserializing index record: %w", err)
+		}
+		cmp := bytes.Compare(indexRecord.Key, key)
+		if cmp == 0 {
+			return indexRecord.Offset, nil // Vracamo ofset ako je kljuc pronadjen
+		} else if cmp < 0 {
+			found = indexRecord.Offset
+		} else {
+			if found != -1 {
+				return found, nil // Vracamo poslednji pronadjeni ofset ako je kljuc manji od trenutnog
+			}
+			return -1, fmt.Errorf("key not found in index")
+		}
+		bnum++
+		if indexOffset >= len(ib.Records) {
+			return -1, fmt.Errorf("key not found in index")
+		}
+	}
+	return -1, fmt.Errorf("key not found in index")
 }

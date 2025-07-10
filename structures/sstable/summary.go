@@ -111,3 +111,24 @@ func (sr *SummaryRecord) Deserialize(data []byte) error {
 
 	return nil
 }
+
+// Pomocna funkcija za citanje SummaryRecord-a sa prefiksom
+// (Summary je vec ucitan iz fajla)
+func (s *Summary) FindSummaryRecordWithKey(key string) (SummaryRecord, error) {
+
+	// Koristimo binarnu pretragu
+	left, right := 0, len(s.Records)-1
+
+	for left <= right {
+		mid := (left + right) / 2
+		if string(s.Records[mid].FirstKey) <= key && string(s.Records[mid].LastKey) >= key {
+			return s.Records[mid], nil // Pronađen odgovarajući SummaryRecord
+		} else if string(s.Records[mid].LastKey) < key {
+			left = mid + 1 // Tražimo u desnoj polovini
+		} else {
+			right = mid - 1 // Tražimo u levoj polovini
+		}
+	}
+	return SummaryRecord{}, fmt.Errorf("no summary record found for key: %s", key)
+
+}
