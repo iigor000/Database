@@ -22,6 +22,7 @@ type SSTable struct {
 	Gen            int
 	UseCompression bool
 	CompressionKey *compression.Dictionary
+	Dir            string
 }
 
 // NewSSTable kreira novi SSTable
@@ -50,6 +51,7 @@ func FlushSSTable(conf *config.Config, memtable memtable.Memtable, generation in
 		CreateFileName(path, generation, "Filter", "db"),
 		CreateFileName(path, generation, "Metadata", "db"))
 	WriteTxtToFile(toc_path, toc_data)
+	sstable.Dir = path
 	return &sstable
 }
 
@@ -183,21 +185,32 @@ func NewSSTable(dir string, conf *config.Config, gen int) *SSTable {
 	}
 	dir = fmt.Sprintf("%s/%d", dir, gen)
 	// Proveravamo da li direktorijum postoji
-	err := CreateDirectoryIfNotExists(dir)
-	if err != nil {
-		panic("Error creating directory for SSTable: " + err.Error())
-	}
+	//err := CreateDirectoryIfNotExists(dir)
+
 	// Citanje kompresije iz fajla
 	dictPath := CreateFileName(dir, gen, "Dictionary", "db")
 	dict, err := compression.Read(dictPath)
 	if err != nil {
 		panic("Error reading dictionary from file: " + err.Error())
 	}
+	println("Dictionary read from file:", dictPath)
+	sstable.UseCompression = true
+	sstable.CompressionKey = dict
 	if dict != nil {
-		sstable.CompressionKey = dict
-		sstable.UseCompression = true
+		if dict.IsEmpty() {
+			sstable.UseCompression = false
+			sstable.CompressionKey = nil
+
+		} else {
+			dict.Print()
+		}
+	} else {
+		sstable.UseCompression = false
+		sstable.CompressionKey = nil
 	}
-	sstable.UseCompression = false
+
+	println("Using compression:", sstable.UseCompression)
+	sstable.Dir = dir
 	// Citanje Data fajla
 	dataPath := CreateFileName(dir, gen, "Data", "db")
 	data, err := ReadData(dataPath, conf, sstable.CompressionKey)
@@ -319,20 +332,23 @@ func NewEmptySSTable(conf *config.Config, generation int) *SSTable {
 	return sstable
 }
 
-// Pomocna funkcija za PreffixIterate
-// Trazi prvi sledeci zapis koji pocinje sa prefiksom
+// Pomocna funkcija za PreffixIterate i RangeIterate
+// Trazi prvi sledeci zapis koji pocinje sa prefiksom/key-em
 // Prvo trazi u Summary, onda u Indexu, a zatim u Data segmentu
-func (s *SSTable) ReadRecordWithPrefix(bm *block_organization.BlockManager, blockNumber int, prefix string) (adapter.MemtableEntry, int) {
+func (s *SSTable) ReadRecordWithKey(bm *block_organization.BlockManager, blockNumber int, prefix string) (adapter.MemtableEntry, int) {
+	println("Reading record with prefix:", prefix)
 	sumRec, err := s.Summary.FindSummaryRecordWithKey(prefix) // Prvo trazimo u Summary
 	if err != nil {
 		return adapter.MemtableEntry{}, -1
 	}
+	println("Found summary record with prefix:", string(sumRec.FirstKey), "to", string(sumRec.LastKey))
 	// Ako smo nasli u Summaryu, trazimo njegov offset u Data fajlu u Indexu
 	dataOffset, err := s.Index.FindDataOffsetWithKey(sumRec.IndexOffset, []byte(prefix), bm)
 	if err != nil {
 		return adapter.MemtableEntry{}, -1
 	}
-	dataRec, nextBlock := s.Data.ReadRecord(bm, dataOffset/bm.BlockSize) // Citanje iz Data fajla
+	println("Found data offset for prefix:", prefix, "at offset:", dataOffset)
+	dataRec, nextBlock := s.Data.ReadRecord(bm, dataOffset/bm.BlockSize, s.CompressionKey) // Citanje iz Data fajla
 	if dataRec.Key == nil {
 		return adapter.MemtableEntry{}, -1
 	}
@@ -342,5 +358,64 @@ func (s *SSTable) ReadRecordWithPrefix(bm *block_organization.BlockManager, bloc
 		Timestamp: dataRec.Timestamp,
 		Tombstone: dataRec.Tombstone,
 	}, nextBlock
+}
 
+func StartSSTable(gen int, conf *config.Config) (*SSTable, error) {
+	// Ucitavamo bloom filter i summary iz fajla
+	if gen < 1 {
+		return nil, fmt.Errorf("invalid generation number: %d", gen)
+	}
+	dir := fmt.Sprintf("%s/%d", conf.SSTable.SstableDirectory, gen)
+	// Ucitavamo BloomFiler
+	bfPath := CreateFileName(dir, gen, "Filter", "db")
+	bf, err := ReadBloomFilter(bfPath, conf)
+	if err != nil {
+		return nil, fmt.Errorf("error reading bloom filter: %w", err)
+	}
+	// Ucitavamo Summary
+	summaryPath := CreateFileName(dir, gen, "Summary", "db")
+	summary, err := ReadSummary(summaryPath, conf)
+	if err != nil {
+		return nil, fmt.Errorf("error reading summary: %w", err)
+	}
+	// Ucitavamo compression
+	compressionPath := CreateFileName(dir, gen, "Dictionary", "db")
+	dict, err := compression.Read(compressionPath)
+	if err != nil {
+		return nil, fmt.Errorf("error reading compression dictionary: %w", err)
+	}
+	useCompression := true
+	if dict != nil {
+		if dict.IsEmpty() {
+			useCompression = false
+			dict = nil
+		} else {
+			dict.Print()
+		}
+	} else {
+		useCompression = false
+		dict = nil
+	}
+
+	data := &Data{
+		FilePath: CreateFileName(dir, gen, "Data", "db"),
+		Records:  []DataRecord{},
+	}
+	index := &Index{
+		FilePath: CreateFileName(dir, gen, "Index", "db"),
+		Records:  []IndexRecord{},
+	}
+
+	sstable := &SSTable{
+		Data:           data,
+		Index:          index,
+		Summary:        summary,
+		Gen:            gen,
+		UseCompression: useCompression,
+		CompressionKey: dict,
+		Filter:         bf,
+		Metadata:       &merkle.MerkleTree{},
+		Dir:            dir,
+	}
+	return sstable, nil
 }

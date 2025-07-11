@@ -49,7 +49,7 @@ func (d *Dictionary) SearchKey(key []byte) (int, bool) {
 }
 
 // Encode pretvara Dictionary u niz bajtova
-func (d *Dictionary) Encode() []byte {
+func (d *Dictionary) Serialize() []byte {
 	encoded := make([]byte, 0)
 	for _, key := range d.keys {
 		buf := make([]byte, binary.MaxVarintLen64)
@@ -61,7 +61,7 @@ func (d *Dictionary) Encode() []byte {
 }
 
 // Decode pretvara niz bajtova nazad u Dictionary
-func Decode(data []byte) (*Dictionary, bool) {
+func Deserialize(data []byte) (*Dictionary, bool) {
 	d := NewDictionary()
 	i := 0
 	for i < len(data) {
@@ -93,7 +93,7 @@ func Read(path string) (*Dictionary, error) {
 	if err != nil {
 		return nil, err // Greska pri citanju fajla
 	}
-	dict, pass := Decode(data)
+	dict, pass := Deserialize(data)
 	if !pass {
 		return nil, err // Greska pri dekodiranju
 	}
@@ -109,10 +109,20 @@ func (d *Dictionary) Write(path string) error {
 		return err // Druga greska pri otvaranju fajla
 	}
 	defer f.Close()
-	encoded := d.Encode()
+	encoded := d.Serialize()
 	_, err = f.Write(encoded)
 	if err != nil {
 		return err // Greska pri pisanju u fajl
 	}
 	return nil
+}
+
+func (d *Dictionary) IsEmpty() bool {
+	return len(d.keys) == 0
+}
+
+func (d *Dictionary) Print() {
+	for i, key := range d.keys {
+		println("Index:", i, "Key:", string(key))
+	}
 }

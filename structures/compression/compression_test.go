@@ -41,15 +41,15 @@ func TestDictionary(t *testing.T) {
 }
 
 // Test Encode and Decode
-func TestEncodeDecode(t *testing.T) {
+func TestSerialization(t *testing.T) {
 	dict := NewDictionary()
 	key0 := []byte("key0")
 	key1 := []byte("key1")
 	dict.Add(key0)
 	dict.Add(key1)
 
-	encoded := dict.Encode()
-	decoded, pass := Decode(encoded)
+	encoded := dict.Serialize()
+	decoded, pass := Deserialize(encoded)
 	if !pass {
 		t.Fatal("Decode failed")
 	}
