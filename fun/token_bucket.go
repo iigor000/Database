@@ -23,6 +23,10 @@ func CreateBucket(db *Database) error {
 }
 
 func CheckBucket(db *Database) (bool, error) {
+	if db.username == "root" {
+		return true, nil
+	}
+
 	value, found, err := db.get(db.username)
 
 	if err != nil {
