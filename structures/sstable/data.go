@@ -109,8 +109,12 @@ func (dr *DataRecord) WriteDataRecord(path string, dict *compression.Dictionary,
 }
 
 // calcCRC Racunaa CRC na osnovu Key, Value, Timestamp i Tombstone
+// calcCRC Racunaa CRC na osnovu Key, Value, Timestamp i Tombstone
 func (dr *DataRecord) calcCRC() uint32 {
-	data := append(dr.Key, dr.Value...)
+	// Create a new slice instead of appending to dr.Key
+	data := make([]byte, 0, len(dr.Key)+len(dr.Value)+8+1)
+	data = append(data, dr.Key...)
+	data = append(data, dr.Value...)
 	data = append(data, byte(dr.Timestamp>>56), byte(dr.Timestamp>>48), byte(dr.Timestamp>>40), byte(dr.Timestamp>>32),
 		byte(dr.Timestamp>>24), byte(dr.Timestamp>>16), byte(dr.Timestamp>>8), byte(dr.Timestamp))
 	if dr.Tombstone {
@@ -236,6 +240,7 @@ func (dr *DataRecord) Deserialize(data []byte, dict *compression.Dictionary) err
 		//println("Key index deserialized:", int(keyIndex))
 		var found bool
 		dr.Key, found = dict.SearchIndex(int(keyIndex))
+
 		if !found {
 			println("key index not found in dictionary:", keyIndex)
 			return fmt.Errorf("key index %d not found in dictionary", keyIndex)
@@ -257,11 +262,14 @@ func (dr *DataRecord) Deserialize(data []byte, dict *compression.Dictionary) err
 			dr.Value = nil // Logicki obrisan zapis nema vrednost
 		}
 	}
+
 	// Proveravamo CRC
-	if dr.CRC != dr.calcCRC() {
+	calculatedCRC := dr.calcCRC()
+
+	if dr.CRC != calculatedCRC {
 		println("CRC mismatch")
-		println("Expected CRC:", dr.CRC, "Calculated CRC:", dr.calcCRC())
-		return fmt.Errorf("CRC mismatch: expected %d, got %d", dr.CRC, dr.calcCRC())
+		println("Expected CRC:", dr.CRC, "Calculated CRC:", calculatedCRC)
+		return fmt.Errorf("CRC mismatch: expected %d, got %d", dr.CRC, calculatedCRC)
 	}
 
 	return nil

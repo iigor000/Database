@@ -69,7 +69,7 @@ func TestSSTableRead(t *testing.T) {
 	conf := &config.Config{
 		SSTable: config.SSTableConfig{
 			SstableDirectory: "./sstable_test",
-			UseCompression:   false,
+			UseCompression:   true,
 			SummaryLevel:     2,
 		},
 		Memtable: config.MemtableConfig{

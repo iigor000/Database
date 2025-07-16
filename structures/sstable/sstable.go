@@ -202,7 +202,7 @@ func NewSSTable(dir string, conf *config.Config, gen int) *SSTable {
 			sstable.CompressionKey = nil
 
 		} else {
-			dict.Print()
+			//dict.Print()
 		}
 	} else {
 		sstable.UseCompression = false
