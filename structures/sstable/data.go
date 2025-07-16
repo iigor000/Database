@@ -126,18 +126,18 @@ func (dr *DataRecord) calcCRC() uint32 {
 }
 
 // Upisuje Data u fajl
-func (db *Data) WriteData(path string, conf *config.Config, dict *compression.Dictionary) (error, *Data) {
+func (db *Data) WriteData(path string, conf *config.Config, dict *compression.Dictionary) (*Data, error) {
 	bm := block_organization.NewBlockManager(conf)
 	rec := 0
 	for _, record := range db.Records {
 		bn, err := record.WriteDataRecord(path, dict, bm)
 		if err != nil {
-			return fmt.Errorf("error writing data record to file %s: %w", path, err), db
+			return db, fmt.Errorf("error writing data record to file %s: %w", path, err)
 		}
 		db.Records[rec].Offset = bn * conf.Block.BlockSize // Racunamo ofset kao broj bloka pomnozen sa velicinom bloka
 		rec++
 	}
-	return nil, db
+	return db, nil
 }
 
 // Citanje DataBlock iz fajla

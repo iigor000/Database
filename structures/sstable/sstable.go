@@ -262,7 +262,7 @@ func WriteSSTable(sstable *SSTable, dir string, conf *config.Config) error {
 
 	// Write Data
 	dataPath := CreateFileName(path, sstable.Gen, "Data", "db")
-	err, _ = sstable.Data.WriteData(dataPath, conf, sstable.CompressionKey)
+	_, err = sstable.Data.WriteData(dataPath, conf, sstable.CompressionKey)
 	if err != nil {
 		return fmt.Errorf("error writing data to file %s: %w", dataPath, err)
 	}
