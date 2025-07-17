@@ -1,58 +1,73 @@
 package sstable
 
-import "github.com/iigor000/database/structures/adapter"
+import (
+	"fmt"
 
-func (s *SSTable) PrefixScan(prefix string, pageNumber int, pageSize int) ([]adapter.MemtableEntry, error) {
+	"github.com/iigor000/database/config"
+	"github.com/iigor000/database/structures/adapter"
+	"github.com/iigor000/database/structures/block_organization"
+)
+
+func (s *SSTable) PrefixScan(prefix string, pageNumber int, pageSize int, conf *config.Config) ([]adapter.MemtableEntry, error) {
 
 	entries := make([]adapter.MemtableEntry, 0)
 	startIndex := pageNumber * pageSize
 	endIndex := startIndex + pageSize
-
-	for i, entry := range s.Data.Records {
-		if i < startIndex {
-			continue
-		}
-		if i >= endIndex {
+	bm := block_organization.NewBlockManager(conf)
+	prefixIter := s.PrefixIterate(prefix, bm)
+	if prefixIter == nil {
+		return nil, fmt.Errorf("failed to create Prefix iterator for prefix: %s", prefix)
+	}
+	for i := 0; i < startIndex; i++ {
+		_, ok := prefixIter.Next()
+		if !ok {
 			break
 		}
-		// TODO: Implementirati algoritam za trazenje prefiksa
-		if len(entry.Key) >= len(prefix) && string(entry.Key[:len(prefix)]) == prefix {
-			rec := adapter.MemtableEntry{
-				Key:       entry.Key,
-				Value:     entry.Value,
-				Timestamp: entry.Timestamp,
-				Tombstone: entry.Tombstone,
-			}
-			entries = append(entries, rec)
+	}
+	for i := startIndex; i < endIndex; i++ {
+		entry, ok := prefixIter.Next()
+		if !ok {
+			break
 		}
+		entries = append(entries, entry)
+	}
+	if len(entries) == 0 {
+		return nil, fmt.Errorf("no records found for prefix: %s", prefix)
+	}
+	if len(entries) < endIndex-startIndex {
+		println("Warning: fewer records found than requested in PrefixScan")
 	}
 
 	return entries, nil
 }
 
-func (s *SSTable) RangeScan(minKey []byte, maxKey []byte, pageNumber int, pageSize int) ([]adapter.MemtableEntry, error) {
+func (s *SSTable) RangeScan(minKey []byte, maxKey []byte, pageNumber int, pageSize int, conf *config.Config) ([]adapter.MemtableEntry, error) {
 	entries := make([]adapter.MemtableEntry, 0)
 	startIndex := pageNumber * pageSize
 	endIndex := startIndex + pageSize
-
-	//TODO: Implementirati algoritam za range scan
-	for i, entry := range s.Data.Records {
-		if i < startIndex {
-			continue
-		}
-		if i >= endIndex {
+	bm := block_organization.NewBlockManager(conf)
+	rangeIter := s.RangeIterate(string(minKey), string(maxKey), bm)
+	if rangeIter == nil {
+		return nil, fmt.Errorf("failed to create Range iterator for range: %s - %s", string(minKey), string(maxKey))
+	}
+	for i := 0; i < startIndex; i++ {
+		_, ok := rangeIter.Next()
+		if !ok {
 			break
 		}
-		if len(entry.Key) >= len(minKey) && string(entry.Key[:len(minKey)]) >= string(minKey) &&
-			len(entry.Key) <= len(maxKey) && string(entry.Key[:len(maxKey)]) <= string(maxKey) {
-			rec := adapter.MemtableEntry{
-				Key:       entry.Key,
-				Value:     entry.Value,
-				Timestamp: entry.Timestamp,
-				Tombstone: entry.Tombstone,
-			}
-			entries = append(entries, rec)
+	}
+	for i := startIndex; i < endIndex; i++ {
+		entry, ok := rangeIter.Next()
+		if !ok {
+			break
 		}
+		entries = append(entries, entry)
+	}
+	if len(entries) == 0 {
+		return nil, fmt.Errorf("no records found for range: %s - %s", string(minKey), string(maxKey))
+	}
+	if len(entries) < endIndex-startIndex {
+		println("Warning: fewer records found than requested in RangeScan")
 	}
 
 	return entries, nil

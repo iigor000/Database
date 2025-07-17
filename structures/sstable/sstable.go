@@ -335,19 +335,26 @@ func NewEmptySSTable(conf *config.Config, generation int) *SSTable {
 // Pomocna funkcija za PreffixIterate i RangeIterate
 // Trazi prvi sledeci zapis koji pocinje sa prefiksom/key-em
 // Prvo trazi u Summary, onda u Indexu, a zatim u Data segmentu
-func (s *SSTable) ReadRecordWithKey(bm *block_organization.BlockManager, blockNumber int, prefix string) (adapter.MemtableEntry, int) {
-	println("Reading record with prefix:", prefix)
+func (s *SSTable) ReadRecordWithKey(bm *block_organization.BlockManager, blockNumber int, prefix string, rangeIter bool) (adapter.MemtableEntry, int) {
+
 	sumRec, err := s.Summary.FindSummaryRecordWithKey(prefix) // Prvo trazimo u Summary
 	if err != nil {
 		return adapter.MemtableEntry{}, -1
 	}
-	println("Found summary record with prefix:", string(sumRec.FirstKey), "to", string(sumRec.LastKey))
 	// Ako smo nasli u Summaryu, trazimo njegov offset u Data fajlu u Indexu
-	dataOffset, err := s.Index.FindDataOffsetWithKey(sumRec.IndexOffset, []byte(prefix), bm)
-	if err != nil {
-		return adapter.MemtableEntry{}, -1
+	dataOffset := -1
+	if rangeIter {
+		dataOffset, err = s.Index.FindDataOffsetWithKey(sumRec.IndexOffset, []byte(prefix), bm)
+		if err != nil {
+			return adapter.MemtableEntry{}, -1
+		}
+	} else {
+		dataOffset, err = s.Index.FindDataOffsetWithPrefix(sumRec.IndexOffset, []byte(prefix), bm)
+		if err != nil {
+			println("Error finding data offset with key:", prefix, "Error:", err)
+			return adapter.MemtableEntry{}, -1
+		}
 	}
-	println("Found data offset for prefix:", prefix, "at offset:", dataOffset)
 	dataRec, nextBlock := s.Data.ReadRecord(bm, dataOffset/bm.BlockSize, s.CompressionKey) // Citanje iz Data fajla
 	if dataRec.Key == nil {
 		return adapter.MemtableEntry{}, -1

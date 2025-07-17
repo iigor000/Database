@@ -121,7 +121,7 @@ func (ir *IndexRecord) Deserialize(data []byte) error {
 	return nil
 }
 
-// Pomocna funkcija za PrefixIterate
+// Pomocna funkcija za Iterate
 // Index segment nije ucitan iz fajla
 func (ib *Index) FindDataOffsetWithKey(indexOffset int, key []byte, bm *block_organization.BlockManager) (int, error) {
 	indexRecord := IndexRecord{}
@@ -154,7 +154,37 @@ func (ib *Index) FindDataOffsetWithKey(indexOffset int, key []byte, bm *block_or
 			return -1, fmt.Errorf("key not found in index")
 		}
 		bnum++
-		if indexOffset >= len(ib.Records) {
+		if indexOffset > len(ib.Records) {
+			return -1, fmt.Errorf("key not found in index")
+		}
+	}
+	return -1, fmt.Errorf("key not found in index")
+}
+
+func (ib *Index) FindDataOffsetWithPrefix(indexOffset int, key []byte, bm *block_organization.BlockManager) (int, error) {
+	indexRecord := IndexRecord{}
+	bnum := indexOffset / bm.BlockSize
+	for {
+		serlzdIndexRec, err := bm.ReadBlock(ib.FilePath, bnum)
+		if err != nil {
+			if err.Error() == "EOF" {
+				break // Kraj fajla
+			}
+			return -1, fmt.Errorf("error reading index block: %w", err)
+		}
+
+		if len(serlzdIndexRec) == 0 {
+			return -1, fmt.Errorf("key not found in index")
+		}
+		if err := indexRecord.Deserialize(serlzdIndexRec); err != nil {
+			return -1, fmt.Errorf("error deserializing index record: %w", err)
+		}
+		if bytes.HasPrefix(indexRecord.Key, []byte(key)) {
+			return indexRecord.Offset, nil
+		}
+
+		bnum++
+		if indexOffset > len(ib.Records) {
 			return -1, fmt.Errorf("key not found in index")
 		}
 	}

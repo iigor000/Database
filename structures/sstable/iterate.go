@@ -1,6 +1,8 @@
 package sstable
 
 import (
+	"bytes"
+
 	"github.com/iigor000/database/structures/adapter"
 	"github.com/iigor000/database/structures/block_organization"
 )
@@ -14,7 +16,6 @@ type SSTableIterator struct {
 
 func (sst *SSTable) NewSSTableIterator(bm *block_organization.BlockManager) *SSTableIterator {
 	rec, nxtBlck := sst.Data.ReadRecord(bm, 0, sst.CompressionKey)
-	println("SSTableIterator initialized with first record key:", string(rec.Key))
 	return &SSTableIterator{
 		sstable:         sst,
 		currentRecord:   rec,
@@ -29,7 +30,6 @@ func (si *SSTableIterator) Next() (adapter.MemtableEntry, bool) {
 	}
 
 	rec := si.currentRecord
-	println("Current Record Key: ", string(si.currentRecord.Key))
 	si.currentRecord, si.nextBlockNumber = si.sstable.Data.ReadRecord(si.blockManager, si.nextBlockNumber, si.sstable.CompressionKey)
 
 	if si.currentRecord.Key == nil {
@@ -60,14 +60,11 @@ func (sst *SSTable) PrefixIterate(prefix string, bm *block_organization.BlockMan
 			Prefix:   prefix,
 		}
 	}
-	println("Creating Prefix iterator for prefix:", prefix)
 	it := SSTableIterator{}
 	it.sstable = sst
 	it.blockManager = bm
 	// Inicijalizujemo iterator sa prvim zapisom koji odgovara prefiksu
-	rec, nextBlock := sst.ReadRecordWithKey(bm, 0, prefix)
-
-	println("First record with prefix:", string(rec.Key))
+	rec, nextBlock := sst.ReadRecordWithKey(bm, 0, prefix, false)
 	it.currentRecord = rec
 	it.nextBlockNumber = nextBlock
 	if it.currentRecord.Key == nil {
@@ -84,11 +81,15 @@ func (pi *PrefixIterator) Next() (adapter.MemtableEntry, bool) {
 		return adapter.MemtableEntry{}, false
 	}
 	record := pi.Iterator.currentRecord
-	rec, nextBlock := pi.Iterator.sstable.ReadRecordWithKey(pi.Iterator.blockManager, pi.Iterator.nextBlockNumber, pi.Prefix)
+	rec, nextBlock := pi.Iterator.sstable.Data.ReadRecord(pi.Iterator.blockManager, pi.Iterator.nextBlockNumber, pi.Iterator.sstable.CompressionKey)
+	if !bytes.HasPrefix(record.Key, []byte(pi.Prefix)) {
+		pi.Iterator.Stop() // Zatvaramo iterator ako nema vise zapisa sa tim prefiksom
+		return adapter.MemtableEntry{}, false
+	}
 	pi.Iterator.currentRecord = rec
 	pi.Iterator.nextBlockNumber = nextBlock
 	if nextBlock == -1 {
-		pi.Iterator.Stop() // Zatvaramo iterator ako nema vise zapisa sa tim prefiksom
+		pi.Iterator.Stop() // Zatvaramo iterator ako nema vise zapisa
 		return adapter.MemtableEntry{}, false
 	}
 
@@ -109,7 +110,7 @@ func (sst *SSTable) RangeIterate(startKey, endKey string, bm *block_organization
 	it := &SSTableIterator{}
 	it.sstable = sst
 	it.blockManager = bm
-	rec, nextBlock := sst.ReadRecordWithKey(bm, 0, startKey)
+	rec, nextBlock := sst.ReadRecordWithKey(bm, 0, startKey, true)
 	it.currentRecord = rec
 	it.nextBlockNumber = nextBlock
 	if it.currentRecord.Key == nil {
@@ -132,9 +133,12 @@ func (ri *RangeIterator) Next() (adapter.MemtableEntry, bool) {
 	ri.Iterator.currentRecord = rec
 	ri.Iterator.nextBlockNumber = nextBlock
 
-	if nextBlock == -1 || string(rec.Key) > ri.EndKey {
+	if nextBlock == -1 {
 		ri.Iterator.Stop() // Zatvaramo iterator ako nema vise zapisa u opsegu
 		return adapter.MemtableEntry{}, false
+	}
+	if bytes.Compare(record.Key, []byte(ri.StartKey)) < 0 || bytes.Compare(record.Key, []byte(ri.EndKey)) > 0 {
+		return ri.Next() // Preskacemo zapise koji nisu u opsegu
 	}
 
 	return record, true

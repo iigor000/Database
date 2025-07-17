@@ -69,7 +69,7 @@ func TestSSTableRead(t *testing.T) {
 	conf := &config.Config{
 		SSTable: config.SSTableConfig{
 			SstableDirectory: "./sstable_test",
-			UseCompression:   true,
+			UseCompression:   false,
 			SummaryLevel:     2,
 		},
 		Memtable: config.MemtableConfig{
@@ -89,7 +89,7 @@ func TestSSTableRead(t *testing.T) {
 	// Initialize a memtable with some data
 	memtable := memtable.NewMemtable(conf, conf.Memtable.NumberOfEntries)
 	// Add some entries to the memtable
-	memtable.Update([]byte("key"), []byte("value1"), 1, false)
+	memtable.Update([]byte("key1"), []byte("value1"), 1, false)
 	memtable.Update([]byte("key2"), []byte("value2"), 2, false)
 	memtable.Update([]byte("key3"), []byte("value3"), 3, false)
 	memtable.Update([]byte("key4"), []byte("value4"), 4, false)
@@ -182,22 +182,21 @@ func TestSSTableIterate(t *testing.T) {
 	}
 	// Test PrefixIterate
 	println("Testing PrefixIterate...")
-	prefix := "key"
+	prefix := "key1"
 	prefixIter := sstable.PrefixIterate(prefix, bm)
 	if prefixIter == nil {
 		t.Fatal("Failed to create Prefix iterator")
 	}
 	println("Iterating over SSTable records with prefix:", prefix)
 	for {
-		entry, ok := prefixIter.Iterator.Next()
+		entry, ok := prefixIter.Next()
 		if !ok {
 			break // No more records
 		}
 		println("Key:", string(entry.Key), "Value:", string(entry.Value), "Timestamp:", entry.Timestamp, "Tombstone:", entry.Tombstone)
-
 	}
 	// Test RangeIterate
-	println("Testing RangeIterate...")
+	println("Testing RangeIterate key2-key4...")
 	startKey := "key2"
 	endKey := "key4"
 	rangeIter := sstable.RangeIterate(startKey, endKey, bm)
@@ -206,11 +205,57 @@ func TestSSTableIterate(t *testing.T) {
 	}
 	println("Iterating over SSTable records in range:", startKey, "-", endKey)
 	for {
-		entry, ok := rangeIter.Iterator.Next()
+		entry, ok := rangeIter.Next()
 		if !ok {
 			break // No more records
 		}
 		println("Key:", string(entry.Key), "Value:", string(entry.Value), "Timestamp:", entry.Timestamp, "Tombstone:", entry.Tombstone)
 
+	}
+}
+
+func TestSSTableScan(t *testing.T) {
+	conf := &config.Config{
+		SSTable: config.SSTableConfig{
+			SstableDirectory: "./sstable_test",
+			UseCompression:   false,
+			SummaryLevel:     2,
+		},
+		Memtable: config.MemtableConfig{
+			NumberOfMemtables: 1,
+			NumberOfEntries:   5,
+			Structure:         "skiplist",
+		},
+		Skiplist: config.SkiplistConfig{
+			MaxHeight: 16,
+		},
+		Block: config.BlockConfig{
+			BlockSize:     4096,
+			CacheCapacity: 100,
+		},
+	}
+	sstable, err := StartSSTable(1, conf)
+	if err != nil {
+		t.Fatalf("Failed to start SSTable: %v", err)
+	}
+	prefix := "key1"
+	println("Testing PrefixScan for prefix:", prefix)
+	results, err := sstable.PrefixScan(prefix, 0, 10, conf)
+	if err != nil {
+		t.Fatalf("PrefixScan failed: %v", err)
+	}
+	for _, entry := range results {
+		println("Key:", string(entry.Key), "Value:", string(entry.Value), "Timestamp:", entry.Timestamp, "Tombstone:", entry.Tombstone)
+	}
+
+	minKey := []byte("key2")
+	maxKey := []byte("key4")
+	println("Testing RangeScan for keys between", string(minKey), "and", string(maxKey))
+	rangeResults, err := sstable.RangeScan(minKey, maxKey, 0, 10, conf)
+	if err != nil {
+		t.Fatalf("RangeScan failed: %v", err)
+	}
+	for _, entry := range rangeResults {
+		println("Key:", string(entry.Key), "Value:", string(entry.Value), "Timestamp:", entry.Timestamp, "Tombstone:", entry.Tombstone)
 	}
 }
