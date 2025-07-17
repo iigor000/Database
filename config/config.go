@@ -43,6 +43,7 @@ type SSTableConfig struct {
 	UseCompression   bool   `json:"use_compression"` // Kompresija SSTable-a true ili false
 	SummaryLevel     int    `json:"summary_level"`   // Velicina filter bloka u bajtovima
 	SstableDirectory string `json:"directory"`       // Direktorijum u kome se cuvaju SSTable-ovi
+	SingleFile       bool   `json:"single_file"`     // Da li se SSTable cuva u jednom fajlu ili u vise
 }
 
 type CacheConfig struct {
@@ -88,6 +89,7 @@ func LoadConfigFile(path string) (*Config, error) {
 			UseCompression:   true,
 			SummaryLevel:     10,
 			SstableDirectory: "data/sstable",
+			SingleFile:       false,
 		},
 		Cache: CacheConfig{
 			Capacity: 100,

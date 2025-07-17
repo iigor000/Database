@@ -26,8 +26,8 @@ type IndexRecord struct {
 
 // IndexBlock struktura je skup IndexRecord-a
 type Index struct {
-	Records  []IndexRecord
-	FilePath string // Putanja do fajla gde su podaci upisani
+	Records   []IndexRecord
+	IndexFile File
 }
 
 // NewIndexRecord pravi IndexRecord
@@ -128,7 +128,7 @@ func (ib *Index) FindDataOffsetWithKey(indexOffset int, key []byte, bm *block_or
 	found := -1
 	bnum := indexOffset / bm.BlockSize
 	for {
-		serlzdIndexRec, err := bm.ReadBlock(ib.FilePath, bnum)
+		serlzdIndexRec, err := bm.ReadBlock(ib.IndexFile.Path, bnum)
 		if err != nil {
 			if err.Error() == "EOF" {
 				break // Kraj fajla
@@ -165,7 +165,7 @@ func (ib *Index) FindDataOffsetWithPrefix(indexOffset int, key []byte, bm *block
 	indexRecord := IndexRecord{}
 	bnum := indexOffset / bm.BlockSize
 	for {
-		serlzdIndexRec, err := bm.ReadBlock(ib.FilePath, bnum)
+		serlzdIndexRec, err := bm.ReadBlock(ib.IndexFile.Path, bnum)
 		if err != nil {
 			if err.Error() == "EOF" {
 				break // Kraj fajla

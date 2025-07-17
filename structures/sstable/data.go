@@ -28,7 +28,7 @@ type DataRecord struct {
 // Data struktura je skup DataRecord-a
 type Data struct {
 	Records  []DataRecord
-	FilePath string // Putanja do fajla gde su podaci upisani
+	DataFile File
 }
 
 // NewDataRecord pravi DataRecord iz memtable entrija
@@ -45,6 +45,7 @@ func NewDataRecord(key, value []byte, timestamp int64, tombstone bool) DataRecor
 	record.ValueSize = int8(len(value))
 	// Postavljanje ofseta na -1, jer jos uvek nije upisan u fajl
 	record.Offset = -1
+
 	return record
 }
 
@@ -109,7 +110,6 @@ func (dr *DataRecord) WriteDataRecord(path string, dict *compression.Dictionary,
 }
 
 // calcCRC Racunaa CRC na osnovu Key, Value, Timestamp i Tombstone
-// calcCRC Racunaa CRC na osnovu Key, Value, Timestamp i Tombstone
 func (dr *DataRecord) calcCRC() uint32 {
 	// Create a new slice instead of appending to dr.Key
 	data := make([]byte, 0, len(dr.Key)+len(dr.Value)+8+1)
@@ -129,6 +129,7 @@ func (dr *DataRecord) calcCRC() uint32 {
 func (db *Data) WriteData(path string, conf *config.Config, dict *compression.Dictionary) (*Data, error) {
 	bm := block_organization.NewBlockManager(conf)
 	rec := 0
+	bn := 0
 	for _, record := range db.Records {
 		bn, err := record.WriteDataRecord(path, dict, bm)
 		if err != nil {
@@ -137,6 +138,7 @@ func (db *Data) WriteData(path string, conf *config.Config, dict *compression.Di
 		db.Records[rec].Offset = bn * conf.Block.BlockSize // Racunamo ofset kao broj bloka pomnozen sa velicinom bloka
 		rec++
 	}
+	db.DataFile.SizeOnDisk = int64(bn * conf.Block.BlockSize)
 	return db, nil
 }
 
@@ -297,7 +299,7 @@ func (d *Data) ReadRecordAtOffset(path string, conf *config.Config, dict *compre
 // Pomocna funkcija za Iterator-e
 func (d *Data) ReadRecord(bm *block_organization.BlockManager, blockNumber int, dict *compression.Dictionary) (adapter.MemtableEntry, int) {
 
-	blockData, err := bm.ReadBlock(d.FilePath, blockNumber)
+	blockData, err := bm.ReadBlock(d.DataFile.Path, blockNumber)
 	if err != nil {
 		return adapter.MemtableEntry{}, -1
 	}

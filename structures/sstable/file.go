@@ -5,6 +5,12 @@ import (
 	"os"
 )
 
+type File struct {
+	Path       string // Putanja do fajla
+	Offset     int64  // Offset u fajlu gde su podaci upisani
+	SizeOnDisk int64  // Velicina fajla na disku
+}
+
 func CreateFileName(path string, gen int, element string, ext string) string {
 	return fmt.Sprintf("%s/usertable-%06d-%s.%s", path, gen, element, ext)
 }

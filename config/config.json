@@ -21,7 +21,8 @@
   "sstable": {
     "use_compression": true,
     "summary_level": 10,
-    "directory": "data/sstable"
+    "directory": "data/sstable",
+    "single_file": false
   },
   "cache": {
     "capacity": 100

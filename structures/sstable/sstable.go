@@ -2,6 +2,8 @@ package sstable
 
 import (
 	"fmt"
+	"io"
+	"os"
 
 	"github.com/iigor000/database/config"
 	"github.com/iigor000/database/structures/adapter"
@@ -23,6 +25,7 @@ type SSTable struct {
 	UseCompression bool
 	CompressionKey *compression.Dictionary
 	Dir            string
+	SingleFile     bool // Da li se SSTable cuva u jednom fajlu ili u vise
 }
 
 // NewSSTable kreira novi SSTable
@@ -35,27 +38,93 @@ func FlushSSTable(conf *config.Config, memtable memtable.Memtable, generation in
 	if err != nil {
 		panic("Error creating directory for SSTable: " + err.Error())
 	}
-	sstable.Data, sstable.CompressionKey = buildData(memtable, conf, generation, path)
-	sstable.Index = buildIndex(conf, generation, path, sstable.Data)
-	sstable.Summary = buildSummary(conf, sstable.Index, generation, path)
-	sstable.Filter = buildBloomFilter(conf, generation, path, sstable.Data)
-	dictPath := CreateFileName(path, generation, "Dictionary", "db")
-	sstable.CompressionKey.Write(dictPath)
-	sstable.Metadata = buildMetadata(conf, generation, path, sstable.Data)
-	// Upis TOC u fajl
-	toc_path := CreateFileName(path, generation, "TOC", "txt")
-	toc_data := fmt.Sprintf("Generation: %d\nData: %s\nIndex: %s\nSummary: %s\nFilter: %s\nMetadata: %s\n",
-		sstable.Gen, CreateFileName(path, generation, "Data", "db"),
-		CreateFileName(path, generation, "Index", "db"),
-		CreateFileName(path, generation, "Summary", "db"),
-		CreateFileName(path, generation, "Filter", "db"),
-		CreateFileName(path, generation, "Metadata", "db"))
-	WriteTxtToFile(toc_path, toc_data)
+	sstable.SingleFile = conf.SSTable.SingleFile
+	sstable.Data, sstable.CompressionKey = buildData(memtable, conf, generation, path, sstable.SingleFile)
+	sstable.Index = buildIndex(conf, generation, path, sstable.Data, sstable.SingleFile)
+	sstable.Summary = buildSummary(conf, sstable.Index, generation, path, sstable.SingleFile)
+	sstable.Filter = buildBloomFilter(conf, generation, path, sstable.Data, sstable.SingleFile)
+	sstable.Metadata = buildMetadata(generation, path, sstable.Data, sstable.SingleFile)
+	if !sstable.SingleFile {
+		dictPath := CreateFileName(path, generation, "Dictionary", "db")
+		sstable.CompressionKey.Write(dictPath)
+		// Upis TOC u fajl
+		toc_path := CreateFileName(path, generation, "TOC", "txt")
+		toc_data := fmt.Sprintf("Generation: %d\nData: %s\nIndex: %s\nSummary: %s\nFilter: %s\nMetadata: %s\n",
+			sstable.Gen, CreateFileName(path, generation, "Data", "db"),
+			CreateFileName(path, generation, "Index", "db"),
+			CreateFileName(path, generation, "Summary", "db"),
+			CreateFileName(path, generation, "Filter", "db"),
+			CreateFileName(path, generation, "Metadata", "db"))
+		WriteTxtToFile(toc_path, toc_data)
+	} else {
+		// Upisujemo sve u jedan fajl
+		sstable.Data.DataFile.Offset = 0
+		_, err := sstable.Data.WriteData(path, conf, sstable.CompressionKey)
+		if err != nil {
+			panic("Error writing data to file: " + err.Error())
+		}
+		sstable.Index.IndexFile.Offset = sstable.Data.DataFile.Offset + sstable.Data.DataFile.SizeOnDisk
+		err = sstable.Index.WriteIndex(path, conf)
+		if err != nil {
+			panic("Error writing index to file: " + err.Error())
+		}
+		sstable.Summary.SummaryFile.Offset = sstable.Index.IndexFile.Offset + sstable.Index.IndexFile.SizeOnDisk
+		err = sstable.Summary.WriteSummary(path, conf)
+		if err != nil {
+			panic("Error writing summary to file: " + err.Error())
+		}
+		filterOffset := sstable.Summary.SummaryFile.Offset + sstable.Summary.SummaryFile.SizeOnDisk
+		file, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0644)
+		if err != nil {
+			return nil
+		}
+		defer file.Close()
+		offset, err := file.Seek(0, io.SeekEnd) // Pozicioniramo se na kraj fajla
+		if err != nil {
+			return nil
+		}
+		serializedFilter := sstable.Filter.Serialize()
+		_, err = file.Write(serializedFilter) // Upisujemo podatke na kraj fajla
+		if err != nil {
+			return nil
+		}
+		metadataOffset := offset + int64(len(serializedFilter))
+		serializedMetadata := sstable.Metadata.Serialize()
+		_, err = file.Write(serializedMetadata) // Upisujemo podatke na kraj fajla
+		if err != nil {
+			return nil
+		}
+		compressionOffset := metadataOffset + int64(len(serializedMetadata))
+		serializedCompression := sstable.CompressionKey.Serialize()
+		_, err = file.Write(serializedCompression) // Upisujemo podatke na kraj fajla
+		if err != nil {
+			return nil
+		}
+		// Upisujemo TOC u fajl
+		offsets := make(map[string]int64)
+		offsets["Data"] = sstable.Data.DataFile.Offset
+		offsets["Index"] = sstable.Index.IndexFile.Offset
+		offsets["Summary"] = sstable.Summary.SummaryFile.Offset
+		offsets["Filter"] = filterOffset
+		offsets["Metadata"] = metadataOffset
+		offsets["Compression"] = compressionOffset
+		_, err = file.Write([]byte("TOC\n"))
+		if err != nil {
+			return nil
+		}
+		for key, offset := range offsets {
+			_, err = file.Write([]byte(fmt.Sprintf("%s: %d\n", key, offset)))
+			if err != nil {
+				return nil
+			}
+		}
+	}
+
 	sstable.Dir = path
 	return &sstable
 }
 
-func buildData(mem memtable.Memtable, conf *config.Config, gen int, path string) (*Data, *compression.Dictionary) {
+func buildData(mem memtable.Memtable, conf *config.Config, gen int, path string, singleFile bool) (*Data, *compression.Dictionary) {
 	db := &Data{}
 	dict := compression.NewDictionary()
 	for i := 0; i < mem.Capacity; i++ {
@@ -68,31 +137,34 @@ func buildData(mem memtable.Memtable, conf *config.Config, gen int, path string)
 			}
 		}
 	}
-	filename := CreateFileName(path, gen, "Data", "db")
-	if conf.SSTable.UseCompression {
-		db.WriteData(filename, conf, dict)
-	} else {
-		db.WriteData(filename, conf, nil)
+	if !singleFile {
+		filename := CreateFileName(path, gen, "Data", "db")
+		if conf.SSTable.UseCompression {
+			db.WriteData(filename, conf, dict)
+		} else {
+			db.WriteData(filename, conf, nil)
+		}
 	}
-
 	return db, dict
 }
 
-func buildIndex(conf *config.Config, gen int, path string, db *Data) *Index {
+func buildIndex(conf *config.Config, gen int, path string, db *Data, singleFile bool) *Index {
 	ib := &Index{}
 	filename := CreateFileName(path, gen, "Index", "db")
 	for _, record := range db.Records {
 		ir := NewIndexRecord(record.Key, record.Offset)
 		ib.Records = append(ib.Records, ir)
 	}
-	err := ib.WriteIndex(filename, conf)
-	if err != nil {
-		panic("Error writing index to file: " + err.Error())
+	if !singleFile {
+		err := ib.WriteIndex(filename, conf)
+		if err != nil {
+			panic("Error writing index to file: " + err.Error())
+		}
 	}
 	return ib
 }
 
-func buildSummary(conf *config.Config, index *Index, gen int, path string) *Summary {
+func buildSummary(conf *config.Config, index *Index, gen int, path string, singleFile bool) *Summary {
 	sb := &Summary{}
 	filename := CreateFileName(path, gen, "Summary", "db")
 	for i := 0; i < len(index.Records); i += conf.SSTable.SummaryLevel {
@@ -116,14 +188,16 @@ func buildSummary(conf *config.Config, index *Index, gen int, path string) *Summ
 			sb.Records = append(sb.Records, sr)
 		}
 	}
-	err := sb.WriteSummary(filename, conf)
-	if err != nil {
-		panic("Error writing summary to file: " + err.Error())
+	if !singleFile {
+		err := sb.WriteSummary(filename, conf)
+		if err != nil {
+			panic("Error writing summary to file: " + err.Error())
+		}
 	}
 	return sb
 }
 
-func buildBloomFilter(conf *config.Config, gen int, path string, db *Data) bloomfilter.BloomFilter {
+func buildBloomFilter(conf *config.Config, gen int, path string, db *Data, singleFile bool) bloomfilter.BloomFilter {
 	filename := CreateFileName(path, gen, "Filter", "db")
 	fb := bloomfilter.MakeBloomFilter(len(db.Records), 0.5)
 	for _, record := range db.Records {
@@ -132,17 +206,19 @@ func buildBloomFilter(conf *config.Config, gen int, path string, db *Data) bloom
 			fb.Add(record.Value)
 		}
 	}
-	serialized := fb.Serialize()
-	bm := block_organization.NewBlockManager(conf)
-	_, err := bm.AppendBlock(filename, serialized)
-	if err != nil {
-		panic("Error writing bloom filter to file: " + err.Error())
+	if !singleFile {
+		serialized := fb.Serialize()
+		bm := block_organization.NewBlockManager(conf)
+		_, err := bm.AppendBlock(filename, serialized)
+		if err != nil {
+			panic("Error writing bloom filter to file: " + err.Error())
+		}
 	}
 	return fb
 }
 
 // buildMetadata kreira Merkle stablo i upisuje ga u fajl
-func buildMetadata(conf *config.Config, gen int, path string, db *Data) *merkle.MerkleTree {
+func buildMetadata(gen int, path string, db *Data, singleFile bool) *merkle.MerkleTree {
 	filename := CreateFileName(path, gen, "Metadata", "db")
 	data := make([][]byte, len(db.Records))
 	for i, record := range db.Records {
@@ -152,9 +228,11 @@ func buildMetadata(conf *config.Config, gen int, path string, db *Data) *merkle.
 		}
 	}
 	mt := merkle.NewMerkleTree(data)
-	err := mt.SerializeToBinaryFile(filename)
-	if err != nil {
-		panic("Error writing Merkle tree to file: " + err.Error())
+	if !singleFile {
+		err := mt.SerializeToBinaryFile(filename)
+		if err != nil {
+			panic("Error writing Merkle tree to file: " + err.Error())
+		}
 	}
 	return mt
 }
@@ -177,6 +255,11 @@ func ReadMetadata(path string) (*merkle.MerkleTree, error) {
 	return mt, nil
 }
 
+func ReadSingleFileSSTable(sstable *SSTable, dir string, gen int, conf *config.Config) *SSTable {
+	//
+	return sstable
+}
+
 // NewSSTable kreira novi SSTable iz fajlova
 func NewSSTable(dir string, conf *config.Config, gen int) *SSTable {
 	sstable := &SSTable{
@@ -186,6 +269,10 @@ func NewSSTable(dir string, conf *config.Config, gen int) *SSTable {
 	dir = fmt.Sprintf("%s/%d", dir, gen)
 	// Proveravamo da li direktorijum postoji
 	//err := CreateDirectoryIfNotExists(dir)
+	if conf.SSTable.SingleFile {
+		sstable = ReadSingleFileSSTable(sstable, dir, gen, conf)
+		return sstable
+	}
 
 	// Citanje kompresije iz fajla
 	dictPath := CreateFileName(dir, gen, "Dictionary", "db")
@@ -405,12 +492,20 @@ func StartSSTable(gen int, conf *config.Config) (*SSTable, error) {
 	}
 
 	data := &Data{
-		FilePath: CreateFileName(dir, gen, "Data", "db"),
-		Records:  []DataRecord{},
+		DataFile: File{
+			Path:       CreateFileName(dir, gen, "Data", "db"),
+			Offset:     0,
+			SizeOnDisk: 0,
+		},
+		Records: []DataRecord{},
 	}
 	index := &Index{
-		FilePath: CreateFileName(dir, gen, "Index", "db"),
-		Records:  []IndexRecord{},
+		IndexFile: File{
+			Path:       CreateFileName(dir, gen, "Index", "db"),
+			Offset:     0,
+			SizeOnDisk: 0,
+		},
+		Records: []IndexRecord{},
 	}
 
 	sstable := &SSTable{

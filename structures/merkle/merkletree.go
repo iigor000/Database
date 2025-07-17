@@ -76,6 +76,63 @@ func NewMerkleTree(data [][]byte) *MerkleTree {
 	return &MerkleTree{Root: root, MerkleRootHash: root.Hash}
 }
 
+func (t *MerkleTree) Serialize() []byte {
+	serializedNodes := BFS(t)
+	var serializedData []byte
+	for _, node := range serializedNodes {
+		serializedData = append(serializedData, node.Hash.Hash[:]...)
+		if node.Left != nil {
+			serializedData = append(serializedData, 1) // Postoji levo dete
+		} else {
+			serializedData = append(serializedData, 0) // Nema levog deteta
+		}
+		if node.Right != nil {
+			serializedData = append(serializedData, 1) // Postoji desno dete
+		} else {
+			serializedData = append(serializedData, 0) // Nema desnog deteta
+		}
+	}
+	return serializedData
+}
+
+// Deserializuje Merkle stablo iz bajt niza
+func Deserialize(data []byte) (*MerkleTree, error) {
+	if len(data) == 0 {
+		return nil, errors.New("data is empty")
+	}
+
+	nodes := make([]Node, 0)
+	for i := 0; i < len(data); {
+		if i+32 > len(data) {
+			return nil, errors.New("data is too short to deserialize a node")
+		}
+		hash := HashValue{}
+		copy(hash.Hash[:], data[i:i+32])
+		i += 32
+
+		leftExists := data[i] == 1
+		i++
+		rightExists := data[i] == 1
+		i++
+
+		node := Node{Hash: hash}
+		if leftExists {
+			node.Left = &nodes[len(nodes)-1]
+		}
+		if rightExists {
+			node.Right = &nodes[len(nodes)-1]
+		}
+		nodes = append(nodes, node)
+	}
+
+	if len(nodes) == 0 {
+		return nil, errors.New("no nodes found in data")
+	}
+
+	root := &nodes[0]
+	return &MerkleTree{Root: root, MerkleRootHash: root.Hash}, nil
+}
+
 // Serijalizacija Merkle stabla u binarnu datoteku merklee.bin
 func (t *MerkleTree) SerializeToBinaryFile(filename string) error {
 	file, err := os.Create(filename)

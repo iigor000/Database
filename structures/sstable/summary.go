@@ -19,7 +19,8 @@ type SummaryRecord struct {
 }
 
 type Summary struct {
-	Records []SummaryRecord
+	Records     []SummaryRecord
+	SummaryFile File
 }
 
 func (sb *Summary) WriteSummary(path string, conf *config.Config) error {
