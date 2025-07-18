@@ -1,9 +1,8 @@
 package cache
 
-// TODO: Dodati error handling
-
 import (
 	"container/list"
+	"errors"
 	"sync"
 
 	"github.com/iigor000/database/config"
@@ -43,7 +42,11 @@ func (c *Cache) Get(key string) (*adapter.MemtableEntry, bool) {
 	return nil, false // Ako ključ ne postoji, vrati null i false
 }
 
-func (c *Cache) Put(entry adapter.MemtableEntry) {
+func (c *Cache) Put(entry adapter.MemtableEntry) error {
+	if len(entry.Key) == 0 {
+		return errors.New("cache: entry key is empty")
+	}
+
 	c.Mu.Lock()
 	defer c.Mu.Unlock()
 
@@ -55,8 +58,10 @@ func (c *Cache) Put(entry adapter.MemtableEntry) {
 			existingEntry.Value = entry.Value         // Ažuriraj vrednost
 			existingEntry.Timestamp = entry.Timestamp // Ažuriraj i timestamp
 			existingEntry.Tombstone = entry.Tombstone // Ažuriraj i tombstone
+			return nil
+		} else {
+			return errors.New("cache: existing element type assertion failed")
 		}
-		return
 	}
 
 	if len(c.Items) >= c.Capacity { // Ako je kapacitet keša pun, izbaci poslednji element
@@ -64,6 +69,8 @@ func (c *Cache) Put(entry adapter.MemtableEntry) {
 		if lastElement != nil {
 			if lastEntry, ok := lastElement.Value.(*adapter.MemtableEntry); ok {
 				delete(c.Items, string(lastEntry.Key)) // Ukloni najstariji element iz heš mape
+			} else {
+				return errors.New("cache: last element type assertion failed during eviction")
 			}
 			c.List.Remove(lastElement) // Ukloni ga iz liste
 		}
@@ -73,4 +80,6 @@ func (c *Cache) Put(entry adapter.MemtableEntry) {
 	entryPtr := &entry
 	element := c.List.PushFront(entryPtr) // Dodaj novi element na početak liste
 	c.Items[keyStr] = element             // Dodaj ga u heš mapu
+
+	return nil
 }

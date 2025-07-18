@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/iigor000/database/config"
+	"github.com/iigor000/database/structures/adapter"
 	"github.com/iigor000/database/structures/block_organization"
 	"github.com/iigor000/database/structures/bloomfilter"
 	"github.com/iigor000/database/structures/cache"
@@ -40,16 +41,17 @@ func NewLSMTree(cfg *config.Config) *LSMTree {
 // Dodaje ključ i vrednost u Memtable i pokreće algoritam za kompakciju ako je potrebno
 func (l *LSMTree) Put(conf *config.Config, key []byte, value []byte) {
 	tombstone := false // Označava da upisujemo novi ključ
-
-	if value == nil { // Ako je value nil, to znači da brišemo ključ
+	if value == nil {  // Ako je value nil, to znači da brišemo ključ
 		tombstone = true
 	}
 
+	entry := adapter.MemtableEntry{Key: key, Value: value, Timestamp: time.Now().UnixNano(), Tombstone: tombstone}
+
 	// Prvo dodaj u Memtable
-	flushed := l.Memtables.Update(key, value, time.Now().UnixNano(), tombstone)
+	flushed := l.Memtables.Update(entry.Key, entry.Value, entry.Timestamp, entry.Tombstone)
 
 	// Zatim ubaci iz Cache
-	l.Cache.Put(hex.EncodeToString(key), value)
+	l.Cache.Put(entry)
 
 	if flushed {
 		l.Compact(conf, 0) // Početni nivo kompakcije je 0
@@ -58,17 +60,17 @@ func (l *LSMTree) Put(conf *config.Config, key []byte, value []byte) {
 
 // Traži ključ u Memtable, Cache i SStables
 func (l *LSMTree) Get(conf *config.Config, key []byte) ([]byte, error) {
-	if value, exists := l.Memtables.Search(key); exists {
-		if value == nil {
-			return nil, fmt.Errorf("record marked as deleted") // ← OVO DODAJ
+	// Proveri u Memtable-ima
+	if entry, exists := l.Memtables.Search(key); exists {
+		if !entry.Tombstone {
+			return entry.Value, nil
 		}
-		// on zavrsi ovde
-		return value, nil
+		return nil, fmt.Errorf("record marked as deleted")
 	}
 
 	// Proveri u Cache
-	if value, exists := l.Cache.Get(hex.EncodeToString(key)); exists {
-		return value, nil
+	if entry, exists := l.Cache.Get(hex.EncodeToString(key)); exists {
+		return entry.Value, nil
 	}
 
 	// Proveri u SSTable-ima (idemo od nižeg ka višim nivoima jer se u nižim nivoima nalaze noviji podaci)
@@ -111,7 +113,14 @@ func (l *LSMTree) Get(conf *config.Config, key []byte) ([]byte, error) {
 						return nil, fmt.Errorf("record marked as deleted") // Ako je tombstone, ključ je obrisan
 					}
 
-					l.Cache.Put(hex.EncodeToString(key), record.Value)
+					entry := adapter.MemtableEntry{
+						Key:       record.Key,
+						Value:     record.Value,
+						Timestamp: record.Timestamp,
+						Tombstone: record.Tombstone,
+					}
+
+					l.Cache.Put(entry)
 					return record.Value, nil
 				}
 			}
@@ -122,7 +131,6 @@ func (l *LSMTree) Get(conf *config.Config, key []byte) ([]byte, error) {
 }
 
 func (l *LSMTree) Delete(conf *config.Config, key []byte) {
-
 	l.Put(conf, key, nil)
 	// prilikom flush-a, tombstone će se prepisati na prethodnu vrednost u disku jer ima veći timestamp
 	// Ako se pokuša Get() sa tim ključem, dobiće vrednost iz Memtable-a, što će biti nil, što znači da je obrisano
