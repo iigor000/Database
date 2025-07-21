@@ -9,7 +9,7 @@ import (
 func TestNewBTree(t *testing.T) {
 	tree := NewBTree(2)
 	if tree == nil {
-		t.Fatal("NewBTree returned nil") // prekida dalje testiranje
+		t.Fatal("NewBTree returned nil")
 	}
 
 	if tree.root != nil {
@@ -25,48 +25,48 @@ func TestInsertAndSearch(t *testing.T) {
 	tree := NewBTree(2)
 
 	// Prvo umetanje
-	tree.Insert(10, []byte("value10"))
+	tree.Insert([]byte("key1"), []byte("value1"))
 	if tree.root == nil {
 		t.Error("Root should not be nil after insertion")
 	}
-	if len(tree.root.keys) != 1 || tree.root.keys[0] != 10 {
+	if len(tree.root.keys) != 1 || !bytes.Equal(tree.root.keys[0], []byte("key1")) {
 		t.Error("Root key not inserted correctly")
 	}
-	if !bytes.Equal(tree.root.values[0], []byte("value10")) {
+	if !bytes.Equal(tree.root.values[0], []byte("value1")) {
 		t.Error("Value not inserted correctly")
 	}
 
 	// Pretraga postojecih i nepostojecih kljuceva
-	val := tree.Search(10)
-	if !bytes.Equal(val, []byte("value10")) {
+	val := tree.Search([]byte("key1"))
+	if !bytes.Equal(val, []byte("value1")) {
 		t.Error("Search returned incorrect value")
 	}
-	val = tree.Search(20)
+	val = tree.Search([]byte("nonexistent"))
 	if val != nil {
 		t.Error("Search should return nil for non-existent key")
 	}
 
 	// Dodavanje vise kljuceva
-	tree.Insert(20, []byte("value20"))
-	tree.Insert(5, []byte("value5"))
-	tree.Insert(15, []byte("value15"))
-	tree.Insert(25, []byte("value25"))
+	tree.Insert([]byte("key2"), []byte("value2"))
+	tree.Insert([]byte("key0"), []byte("value0"))
+	tree.Insert([]byte("key1.5"), []byte("value1.5"))
+	tree.Insert([]byte("key3"), []byte("value3"))
 
 	testCases := []struct {
-		key   byte
+		key   []byte
 		value []byte
 	}{
-		{5, []byte("value5")},
-		{10, []byte("value10")},
-		{15, []byte("value15")},
-		{20, []byte("value20")},
-		{25, []byte("value25")},
+		{[]byte("key0"), []byte("value0")},
+		{[]byte("key1"), []byte("value1")},
+		{[]byte("key1.5"), []byte("value1.5")},
+		{[]byte("key2"), []byte("value2")},
+		{[]byte("key3"), []byte("value3")},
 	}
 
 	for _, tc := range testCases {
 		val := tree.Search(tc.key)
 		if !bytes.Equal(val, tc.value) {
-			t.Errorf("Search for key %d returned incorrect value, expected %s, got %s", tc.key, tc.value, val)
+			t.Errorf("Search for key %s returned incorrect value, expected %s, got %s", tc.key, tc.value, val)
 		}
 	}
 }
@@ -74,7 +74,13 @@ func TestInsertAndSearch(t *testing.T) {
 // Testira podelu korena
 func TestSplitRoot(t *testing.T) {
 	tree := NewBTree(2)
-	keys := []byte{10, 20, 30, 40, 50}
+	keys := [][]byte{
+		[]byte("key1"),
+		[]byte("key2"),
+		[]byte("key3"),
+		[]byte("key4"),
+		[]byte("key5"),
+	}
 
 	for i, k := range keys {
 		tree.Insert(k, []byte("value"+string(k)))
@@ -105,31 +111,51 @@ func TestSplitRoot(t *testing.T) {
 // Testira brisanje elemenata iz stabla
 func TestDelete(t *testing.T) {
 	tree := NewBTree(2)
-	keys := []byte{10, 20, 30, 40, 50, 25, 35, 5, 15, 45}
+	keys := [][]byte{
+		[]byte("key1"),
+		[]byte("key2"),
+		[]byte("key3"),
+		[]byte("key4"),
+		[]byte("key5"),
+		[]byte("key2.5"),
+		[]byte("key3.5"),
+		[]byte("key0.5"),
+		[]byte("key1.5"),
+		[]byte("key4.5"),
+	}
 	for _, k := range keys {
 		tree.Insert(k, []byte("value"+string(k)))
 	}
 
-	tree.Delete(5)
-	if tree.Search(5) != nil {
-		t.Error("Key 5 should be deleted")
+	tree.Delete([]byte("key0.5"))
+	if tree.Search([]byte("key0.5")) != nil {
+		t.Error("Key 'key0.5' should be deleted")
 	}
-	tree.Delete(30)
-	if tree.Search(30) != nil {
-		t.Error("Key 30 should be deleted")
+	tree.Delete([]byte("key3"))
+	if tree.Search([]byte("key3")) != nil {
+		t.Error("Key 'key3' should be deleted")
 	}
 
-	remainingKeys := []byte{10, 15, 20, 25, 35, 40, 45, 50}
+	remainingKeys := [][]byte{
+		[]byte("key1"),
+		[]byte("key1.5"),
+		[]byte("key2"),
+		[]byte("key2.5"),
+		[]byte("key3.5"),
+		[]byte("key4"),
+		[]byte("key4.5"),
+		[]byte("key5"),
+	}
 	for _, k := range remainingKeys {
 		if tree.Search(k) == nil {
-			t.Errorf("Key %d should still exist after deletions", k)
+			t.Errorf("Key %s should still exist after deletions", k)
 		}
 	}
 
 	for _, k := range remainingKeys {
 		tree.Delete(k)
 		if tree.Search(k) != nil {
-			t.Errorf("Key %d should be deleted", k)
+			t.Errorf("Key %s should be deleted", k)
 		}
 	}
 
@@ -141,7 +167,23 @@ func TestDelete(t *testing.T) {
 // Testira inorder obilazak stabla
 func TestTraversal(t *testing.T) {
 	tree := NewBTree(2)
-	keys := []byte{50, 30, 70, 20, 40, 60, 80, 10, 25, 35, 45, 55, 65, 75, 85}
+	keys := [][]byte{
+		[]byte("key5"),
+		[]byte("key3"),
+		[]byte("key7"),
+		[]byte("key2"),
+		[]byte("key4"),
+		[]byte("key6"),
+		[]byte("key8"),
+		[]byte("key1"),
+		[]byte("key2.5"),
+		[]byte("key3.5"),
+		[]byte("key4.5"),
+		[]byte("key5.5"),
+		[]byte("key6.5"),
+		[]byte("key7.5"),
+		[]byte("key8.5"),
+	}
 	for _, k := range keys {
 		tree.Insert(k, []byte("value"+string(k)))
 	}
@@ -152,18 +194,18 @@ func TestTraversal(t *testing.T) {
 	}
 
 	for i := 1; i < len(sorted); i++ {
-		if sorted[i-1] > sorted[i] {
-			t.Errorf("Keys not in sorted order: %d > %d", sorted[i-1], sorted[i])
+		if bytes.Compare(sorted[i-1], sorted[i]) > 0 {
+			t.Errorf("Keys not in sorted order: %s > %s", sorted[i-1], sorted[i])
 		}
 	}
 
-	keyMap := make(map[byte]bool)
+	keyMap := make(map[string]bool)
 	for _, k := range keys {
-		keyMap[k] = true
+		keyMap[string(k)] = true
 	}
 	for _, k := range sorted {
-		if !keyMap[k] {
-			t.Errorf("Key %d found in traversal but not in original set", k)
+		if !keyMap[string(k)] {
+			t.Errorf("Key %s found in traversal but not in original set", k)
 		}
 	}
 }
@@ -171,23 +213,40 @@ func TestTraversal(t *testing.T) {
 // Testira pozajmljivanje i spajanje cvorova
 func TestBorrowAndMerge(t *testing.T) {
 	tree := NewBTree(2)
-	keys := []byte{10, 20, 30, 40, 50, 60, 70, 80, 90}
+	keys := [][]byte{
+		[]byte("key1"),
+		[]byte("key2"),
+		[]byte("key3"),
+		[]byte("key4"),
+		[]byte("key5"),
+		[]byte("key6"),
+		[]byte("key7"),
+		[]byte("key8"),
+		[]byte("key9"),
+	}
 	for _, k := range keys {
 		tree.Insert(k, []byte("value"+string(k)))
 	}
 
-	tree.Delete(10)
-	tree.Delete(20)
-	tree.Delete(30)
+	tree.Delete([]byte("key1"))
+	tree.Delete([]byte("key2"))
+	tree.Delete([]byte("key3"))
 
-	if tree.Search(10) != nil || tree.Search(20) != nil || tree.Search(30) != nil {
+	if tree.Search([]byte("key1")) != nil || tree.Search([]byte("key2")) != nil || tree.Search([]byte("key3")) != nil {
 		t.Error("Deleted keys should not exist")
 	}
 
-	remainingKeys := []byte{40, 50, 60, 70, 80, 90}
+	remainingKeys := [][]byte{
+		[]byte("key4"),
+		[]byte("key5"),
+		[]byte("key6"),
+		[]byte("key7"),
+		[]byte("key8"),
+		[]byte("key9"),
+	}
 	for _, k := range remainingKeys {
 		if tree.Search(k) == nil {
-			t.Errorf("Key %d should still exist after deletions", k)
+			t.Errorf("Key %s should still exist after deletions", k)
 		}
 	}
 }
@@ -196,18 +255,18 @@ func TestBorrowAndMerge(t *testing.T) {
 func TestEdgeCases(t *testing.T) {
 	tree := NewBTree(2)
 
-	tree.Insert(10, []byte("value1"))
-	tree.Insert(10, []byte("value2"))
-	val := tree.Search(10)
+	tree.Insert([]byte("key1"), []byte("value1"))
+	tree.Insert([]byte("key1"), []byte("value2"))
+	val := tree.Search([]byte("key1"))
 	if !bytes.Equal(val, []byte("value2")) {
 		t.Error("Duplicate key should overwrite value")
 	}
 
-	tree.Delete(99) // nepostojeci kljuc - ne sme izazvati gresku
+	tree.Delete([]byte("nonexistent")) // nepostojeci kljuc - ne sme izazvati gresku
 
 	emptyTree := NewBTree(2)
-	if emptyTree.Search(10) != nil {
+	if emptyTree.Search([]byte("key1")) != nil {
 		t.Error("Search on empty tree should return nil")
 	}
-	emptyTree.Delete(10) // ne sme izazvati gresku
+	emptyTree.Delete([]byte("key1")) // ne sme izazvati gresku
 }

@@ -1,6 +1,7 @@
 package btree
 
 import (
+	"bytes"
 	"fmt"
 )
 
@@ -10,7 +11,7 @@ type BTree struct {
 }
 
 type Node struct {
-	keys     []byte   // kljucevi u cvoru
+	keys     [][]byte // kljucevi u cvoru (sada []byte umesto byte)
 	values   [][]byte // vrednosti povezane sa kljucevima
 	children []*Node  // pokazivaci na decu
 	leaf     bool     // da li je list
@@ -25,7 +26,7 @@ func NewBTree(t int) *BTree {
 }
 
 // Search pretrazuje B stablo za kljucem k i vraca odgovarajucu vrednost
-func (t *BTree) Search(k byte) []byte {
+func (t *BTree) Search(k []byte) []byte {
 	if t.root == nil {
 		return nil
 	}
@@ -33,13 +34,13 @@ func (t *BTree) Search(k byte) []byte {
 }
 
 // search rekurzivno pretrazuje cvor x za kljucem k
-func search(x *Node, k byte) []byte {
+func search(x *Node, k []byte) []byte {
 	i := 0
-	for i < len(x.keys) && k > x.keys[i] {
+	for i < len(x.keys) && bytesCompare(k, x.keys[i]) > 0 {
 		i++
 	}
 
-	if i < len(x.keys) && k == x.keys[i] {
+	if i < len(x.keys) && bytesEqual(k, x.keys[i]) {
 		return x.values[i]
 	}
 
@@ -55,11 +56,11 @@ func search(x *Node, k byte) []byte {
 }
 
 // Insert umetne kljuc k i vrednost v u B stablo
-func (t *BTree) Insert(k byte, v []byte) {
+func (t *BTree) Insert(k, v []byte) {
 	if t.root == nil {
 		// Prvi unos u stablo - korenski cvor
 		t.root = &Node{
-			keys:     []byte{k},
+			keys:     [][]byte{k},
 			values:   [][]byte{v},
 			children: []*Node{},
 			leaf:     true,
@@ -105,7 +106,7 @@ func (t *BTree) splitChild(x *Node, i int) {
 	}
 
 	// Ubacivanje srednjeg kljuca i vrednosti u roditelja
-	x.keys = append(x.keys, 0)
+	x.keys = append(x.keys, nil)
 	copy(x.keys[i+1:], x.keys[i:])
 	x.keys[i] = midKey
 
@@ -120,22 +121,22 @@ func (t *BTree) splitChild(x *Node, i int) {
 }
 
 // insertNonFull umetne kljuc k i vrednost v u cvor x koji nije pun
-func (t *BTree) insertNonFull(x *Node, k byte, v []byte) {
+func (t *BTree) insertNonFull(x *Node, k, v []byte) {
 	i := len(x.keys) - 1
 
 	if x.leaf {
 		// Ako kljuc vec postoji, samo azuriraj vrednost
 		for j := 0; j < len(x.keys); j++ {
-			if x.keys[j] == k {
+			if bytesEqual(x.keys[j], k) {
 				x.values[j] = v
 				return
 			}
 		}
 
 		// Ubacivanje novog kljuca i vrednosti u list
-		x.keys = append(x.keys, 0)
+		x.keys = append(x.keys, nil)
 		x.values = append(x.values, nil)
-		for i >= 0 && k < x.keys[i] {
+		for i >= 0 && bytesCompare(k, x.keys[i]) < 0 {
 			x.keys[i+1] = x.keys[i]
 			x.values[i+1] = x.values[i]
 			i--
@@ -144,7 +145,7 @@ func (t *BTree) insertNonFull(x *Node, k byte, v []byte) {
 		x.values[i+1] = v
 	} else {
 		// Nadji odgovarajuce dete za umetanje
-		for i >= 0 && k < x.keys[i] {
+		for i >= 0 && bytesCompare(k, x.keys[i]) < 0 {
 			i--
 		}
 		i++
@@ -152,7 +153,7 @@ func (t *BTree) insertNonFull(x *Node, k byte, v []byte) {
 		// Ako je dete puno, podeli ga
 		if len(x.children[i].keys) == 2*t.t-1 {
 			t.splitChild(x, i)
-			if k > x.keys[i] {
+			if bytesCompare(k, x.keys[i]) > 0 {
 				i++
 			}
 		}
@@ -161,7 +162,7 @@ func (t *BTree) insertNonFull(x *Node, k byte, v []byte) {
 }
 
 // Delete uklanja kljuc k iz B stabla
-func (t *BTree) Delete(k byte) {
+func (t *BTree) Delete(k []byte) {
 	if t.root == nil {
 		return
 	}
@@ -179,14 +180,14 @@ func (t *BTree) Delete(k byte) {
 }
 
 // delete uklanja kljuc k iz cvor x
-func (t *BTree) delete(x *Node, k byte) {
+func (t *BTree) delete(x *Node, k []byte) {
 	i := 0
-	for i < len(x.keys) && x.keys[i] < k {
+	for i < len(x.keys) && bytesCompare(x.keys[i], k) < 0 {
 		i++
 	}
 
 	// Kljuc je u ovom cvoru
-	if i < len(x.keys) && x.keys[i] == k {
+	if i < len(x.keys) && bytesEqual(x.keys[i], k) {
 		if x.leaf {
 			// Brisanje iz lista
 			t.deleteFromLeaf(x, i)
@@ -247,7 +248,7 @@ func (t *BTree) deleteFromInternalNode(x *Node, i int) {
 }
 
 // getPredecessor vraca najveci kljuc u podstablu x
-func (t *BTree) getPredecessor(x *Node) byte {
+func (t *BTree) getPredecessor(x *Node) []byte {
 	if x.leaf {
 		return x.keys[len(x.keys)-1]
 	}
@@ -263,7 +264,7 @@ func (t *BTree) getPredecessorValue(x *Node) []byte {
 }
 
 // getSuccessor vraca najmanji kljuc u podstablu x
-func (t *BTree) getSuccessor(x *Node) byte {
+func (t *BTree) getSuccessor(x *Node) []byte {
 	if x.leaf {
 		return x.keys[0]
 	}
@@ -302,7 +303,7 @@ func (t *BTree) borrowFromPrev(x *Node, i int) {
 	sibling := x.children[i-1]
 
 	// Pomeri kljuc iz roditelja u dete
-	child.keys = append([]byte{x.keys[i-1]}, child.keys...)
+	child.keys = append([][]byte{x.keys[i-1]}, child.keys...)
 	child.values = append([][]byte{x.values[i-1]}, child.values...)
 
 	// Ako nije list, pomeri dete iz brata u dete
@@ -368,6 +369,16 @@ func (t *BTree) merge(x *Node, i int) {
 	x.children = append(x.children[:i+1], x.children[i+2:]...)
 }
 
+// bytesCompare poredi dva []byte niza
+func bytesCompare(a, b []byte) int {
+	return bytes.Compare(a, b)
+}
+
+// bytesEqual proverava da li su dva []byte niza jednaka
+func bytesEqual(a, b []byte) bool {
+	return bytes.Equal(a, b)
+}
+
 // Traverse obilazi B stablo i ispisuje kljuceve
 func (t *BTree) Traverse() {
 	traverse(t.root)
@@ -380,7 +391,7 @@ func traverse(x *Node) {
 			if !x.leaf {
 				traverse(x.children[i])
 			}
-			fmt.Printf("%d ", x.keys[i])
+			fmt.Printf("%s ", x.keys[i])
 		}
 		if !x.leaf {
 			traverse(x.children[len(x.keys)])
@@ -393,23 +404,23 @@ func (t *BTree) MinToMaxTraversal() {
 	fmt.Println("B-tree values from smallest to largest:")
 	sorted := t.SortedKeys()
 	for _, k := range sorted {
-		fmt.Printf("%d ", k)
+		fmt.Printf("%s ", k)
 	}
 	fmt.Println()
 }
 
 // SortedKeys vraca kljuceve B stabla u sortiranom redosledu
-func (t *BTree) SortedKeys() []byte {
+func (t *BTree) SortedKeys() [][]byte {
 	return collectSortedKeys(t.root)
 }
 
 // collectSortedKeys rekurzivno prikuplja kljuceve iz stabla u sortiranom redosledu
-func collectSortedKeys(x *Node) []byte {
+func collectSortedKeys(x *Node) [][]byte {
 	if x == nil {
-		return []byte{}
+		return [][]byte{}
 	}
 
-	result := []byte{}
+	result := [][]byte{}
 
 	for i := 0; i < len(x.keys); i++ {
 		if !x.leaf {
