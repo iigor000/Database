@@ -26,8 +26,7 @@ func TestSSTable(t *testing.T) {
 			MaxHeight: 16,
 		},
 		Block: config.BlockConfig{
-			BlockSize:     4096,
-			CacheCapacity: 100,
+			BlockSize: 4096,
 		},
 	}
 	// Initialize a memtable with some data
@@ -81,8 +80,7 @@ func TestSSTableRead(t *testing.T) {
 			MaxHeight: 16,
 		},
 		Block: config.BlockConfig{
-			BlockSize:     4096,
-			CacheCapacity: 100,
+			BlockSize: 4096,
 		},
 	}
 
@@ -157,8 +155,7 @@ func TestSSTableIterate(t *testing.T) {
 			MaxHeight: 16,
 		},
 		Block: config.BlockConfig{
-			BlockSize:     4096,
-			CacheCapacity: 100,
+			BlockSize: 4096,
 		},
 	}
 	sstable, err := StartSSTable(1, conf)
@@ -230,8 +227,7 @@ func TestSSTableScan(t *testing.T) {
 			MaxHeight: 16,
 		},
 		Block: config.BlockConfig{
-			BlockSize:     4096,
-			CacheCapacity: 100,
+			BlockSize: 4096,
 		},
 	}
 	sstable, err := StartSSTable(1, conf)

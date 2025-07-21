@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"sync"
 
 	"github.com/iigor000/database/config"
 )
@@ -12,7 +11,6 @@ import (
 // BlockManager je struktura koja omogucava citanje i pisanje blokova podataka na disku
 type BlockManager struct {
 	BlockSize int
-	mu        sync.Mutex
 }
 
 func NewBlockManager(cfg *config.Config) *BlockManager {
@@ -23,8 +21,6 @@ func NewBlockManager(cfg *config.Config) *BlockManager {
 
 // Funkcija koja cita blok podataka sa diska
 func (bm *BlockManager) ReadBlock(filePath string, blockNumber int) ([]byte, error) {
-	bm.mu.Lock()
-	defer bm.mu.Unlock()
 
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -45,8 +41,6 @@ func (bm *BlockManager) ReadBlock(filePath string, blockNumber int) ([]byte, err
 
 // Funkcija koja pise blok podataka na disk
 func (bm *BlockManager) WriteBlock(filePath string, blockNumber int, data []byte) error {
-	bm.mu.Lock()
-	defer bm.mu.Unlock()
 
 	// Proveravamo da li je duzina podataka veca od BlockSize
 	if len(data) > bm.BlockSize {
@@ -72,8 +66,6 @@ func (bm *BlockManager) WriteBlock(filePath string, blockNumber int, data []byte
 
 // Funkcija koja dodaje blok podataka na kraj fajla i vraca broj bloka
 func (bm *BlockManager) AppendBlock(filePath string, data []byte) (int, error) {
-	bm.mu.Lock()
-	defer bm.mu.Unlock()
 
 	// Proveravamo da li je duzina podataka veca od BlockSize
 	if len(data) > bm.BlockSize {

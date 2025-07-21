@@ -31,7 +31,7 @@ func TestLoadConfigFile_LoadsValidConfig(t *testing.T) {
 	defer os.Remove(tmpFile.Name())
 
 	configJSON := `{
-		"block": {"block_size": 8192, "cache_capacity": 200},
+		"block": {"block_size": 8192},
 		"wal": {"wal_segment_size": 200, "wal_directory": "wal_dir"},
 		"memtable": {"num": 5, "num_entries": 500, "struct": "tree"},
 		"skiplist": {"max_height": 8},
@@ -85,7 +85,7 @@ func TestLoadConfigFile_InvalidBlockSize(t *testing.T) {
 	defer os.Remove(tmpFile.Name())
 
 	configJSON := `{
-		"block": {"block_size": 1234, "cache_capacity": 200},
+		"block": {"block_size": 1234},
 		"wal": {"wal_segment_size": 200, "wal_directory": "wal_dir"},
 		"memtable": {"num": 5, "num_entries": 500, "struct": "tree"},
 		"skiplist": {"max_height": 8},
@@ -141,7 +141,6 @@ func TestLoadConfigFile_InvalidMaxSSTablesPerLevelLength(t *testing.T) {
 	}
 }
 
-
 func TestLoadConfigFile_InvalidJSON(t *testing.T) {
 	tmpFile, err := ioutil.TempFile("", "config-*.json")
 	if err != nil {
@@ -149,7 +148,7 @@ func TestLoadConfigFile_InvalidJSON(t *testing.T) {
 	}
 	defer os.Remove(tmpFile.Name())
 
-	invalidJSON := `{"block": {"block_size": 4096, "cache_capacity": 100},`
+	invalidJSON := `{"block": {"block_size": 4096},`
 	if _, err := tmpFile.Write([]byte(invalidJSON)); err != nil {
 		t.Fatalf("failed to write config: %v", err)
 	}

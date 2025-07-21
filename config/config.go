@@ -20,8 +20,7 @@ type Config struct {
 }
 
 type BlockConfig struct {
-	BlockSize     int `json:"block_size"`     // Velicina bloka u bajtovima
-	CacheCapacity int `json:"cache_capacity"` // Kapacitet kes memorije
+	BlockSize int `json:"block_size"` // Velicina bloka u bajtovima
 }
 
 type WalConfig struct {
@@ -67,8 +66,7 @@ type BTreeConfig struct {
 func LoadConfigFile(path string) (*Config, error) {
 	defaultConfig := &Config{
 		Block: BlockConfig{
-			BlockSize:     4096,
-			CacheCapacity: 100,
+			BlockSize: 4096,
 		},
 		Wal: WalConfig{
 			WalSegmentSize: 100,

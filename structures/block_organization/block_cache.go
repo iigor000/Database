@@ -2,7 +2,6 @@ package block_organization
 
 import (
 	"container/list"
-	"sync"
 
 	"github.com/iigor000/database/config"
 )
@@ -13,7 +12,6 @@ type BlockCache struct {
 	cache     map[string]*list.Element // Mapa koja cuva kljuc i pokazivac na elemente u dvostruko spregnutoj listi
 	list      *list.List               // Dvostruko spregnuta lista koja cuva blokove podataka u redosledu pristupa
 	blockSize int
-	mu        sync.Mutex // Sprecava istovremeni modifikacije kesa
 }
 
 // Struktura koja cuva kljuc i blok podataka
@@ -22,9 +20,9 @@ type cacheData struct {
 	block []byte
 }
 
-func NewBlockCache(cfg config.Config) *BlockCache {
+func NewBlockCache(cfg *config.Config) *BlockCache {
 	return &BlockCache{
-		capacity:  cfg.Block.CacheCapacity,
+		capacity:  cfg.Cache.Capacity,
 		cache:     make(map[string]*list.Element),
 		list:      list.New(),
 		blockSize: cfg.Block.BlockSize,
@@ -33,8 +31,6 @@ func NewBlockCache(cfg config.Config) *BlockCache {
 
 // Funkcija, na osnovu kljuca, dobavlja blok podataka iz kesa, ako postoji pomeramo ga na pocetak liste i returnujemo blok taj
 func (bc *BlockCache) Get(key string) ([]byte, bool) {
-	bc.mu.Lock()
-	defer bc.mu.Unlock()
 	if element, isThere := bc.cache[key]; isThere { // Proveravamo da li kljuc postoji u mapi (cache)
 		// elem predstavlja pokazivac na element u listi
 		bc.list.MoveToFront(element)
@@ -45,8 +41,6 @@ func (bc *BlockCache) Get(key string) ([]byte, bool) {
 
 // Funkcija koja dodaje blok u kes
 func (bc *BlockCache) Put(key string, block []byte) {
-	bc.mu.Lock()
-	defer bc.mu.Unlock()
 	if element, isThere := bc.cache[key]; isThere {
 		bc.list.MoveToFront(element)
 		element.Value.(*cacheData).block = block // Menjamo vrednost bloka

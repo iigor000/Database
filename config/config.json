@@ -1,7 +1,6 @@
 {
   "block": {
-    "block_size": 4096,
-    "cache_capacity": 100
+    "block_size": 4096
   },
   "wal": {
     "wal_segment_size": 10,

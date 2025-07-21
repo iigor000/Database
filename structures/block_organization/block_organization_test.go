@@ -19,13 +19,15 @@ func TestBlockManagerWriteRead(t *testing.T) {
 	defer os.RemoveAll(tempDir)
 
 	// Def konfiguracija
-	cfg := config.Config{
+	cfg := &config.Config{
 		Block: config.BlockConfig{
-			BlockSize:     1024, // 1 KB blokovi
-			CacheCapacity: 10,
+			BlockSize: 1024,
+		},
+		Cache: config.CacheConfig{
+			Capacity: 10,
 		},
 	}
-	bm := NewBlockManager(&cfg)
+	bm := NewBlockManager(cfg)
 
 	filePath := filepath.Join(tempDir, "testfile.dat")
 
@@ -52,10 +54,12 @@ func TestBlockManagerWriteRead(t *testing.T) {
 // i getovanje blokova kao i izbacivanje najstarijeg elementa kad se dostigne kapacitet
 func TestBlockCache(t *testing.T) {
 	// Konfiguracija sa malim kapacitetom za test (npr. kapacitet 2)
-	cfg := config.Config{
+	cfg := &config.Config{
 		Block: config.BlockConfig{
-			BlockSize:     512,
-			CacheCapacity: 2,
+			BlockSize: 1024,
+		},
+		Cache: config.CacheConfig{
+			Capacity: 2,
 		},
 	}
 	bc := NewBlockCache(cfg)
@@ -98,14 +102,16 @@ func TestCachedBlockManager(t *testing.T) {
 	filePath := filepath.Join(tempDir, "testfile.dat")
 
 	// Konfiguracija za test
-	cfg := config.Config{
+	cfg := &config.Config{
 		Block: config.BlockConfig{
-			BlockSize:     1024,
-			CacheCapacity: 10,
+			BlockSize: 1024,
+		},
+		Cache: config.CacheConfig{
+			Capacity: 10,
 		},
 	}
 	// Kreiramo BlockManager i BlockCache
-	bm := NewBlockManager(&cfg)
+	bm := NewBlockManager(cfg)
 	bc := NewBlockCache(cfg)
 	cbm := &CachedBlockManager{
 		BM: bm,
@@ -156,13 +162,15 @@ func TestBlockManagerAppendBlock(t *testing.T) {
 	defer os.RemoveAll(tempDir)
 
 	// Def konfiguracija
-	cfg := config.Config{
+	cfg := &config.Config{
 		Block: config.BlockConfig{
-			BlockSize:     1024, // 1 KB blokovi
-			CacheCapacity: 10,
+			BlockSize: 1024,
+		},
+		Cache: config.CacheConfig{
+			Capacity: 10,
 		},
 	}
-	bm := NewBlockManager(&cfg)
+	bm := NewBlockManager(cfg)
 
 	filePath := filepath.Join(tempDir, "testfile.dat")
 
@@ -195,13 +203,15 @@ func TestBlockManagerAppend(t *testing.T) {
 	defer os.RemoveAll(tempDir)
 
 	// Def konfiguracija
-	cfg := config.Config{
+	cfg := &config.Config{
 		Block: config.BlockConfig{
-			BlockSize:     1024, // 1 KB blokovi
-			CacheCapacity: 10,
+			BlockSize: 1024,
+		},
+		Cache: config.CacheConfig{
+			Capacity: 10,
 		},
 	}
-	bm := NewBlockManager(&cfg)
+	bm := NewBlockManager(cfg)
 
 	filePath := filepath.Join(tempDir, "testfile.dat")
 
@@ -236,13 +246,15 @@ func TestBlockManagerWrite(t *testing.T) {
 	defer os.RemoveAll(tempDir)
 
 	// Def konfiguracija
-	cfg := config.Config{
+	cfg := &config.Config{
 		Block: config.BlockConfig{
-			BlockSize:     1024, // 1 KB blokovi
-			CacheCapacity: 10,
+			BlockSize: 1024,
+		},
+		Cache: config.CacheConfig{
+			Capacity: 10,
 		},
 	}
-	bm := NewBlockManager(&cfg)
+	bm := NewBlockManager(cfg)
 
 	filePath := filepath.Join(tempDir, "testfile.dat")
 
