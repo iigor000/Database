@@ -48,16 +48,7 @@ func MakeSkipList(maxHeight int) *SkipList {
 	return &SkipList{maxHeight: maxHeight, root: &root, size: maxHeight}
 }
 
-func (s *SkipList) Update1(key []byte, value []byte) {
-	nodes := s.SearchNodes(key)
-	for _, node := range nodes {
-		if node.next != nil && !bytes.Equal(node.next.key, key) {
-			node.next.value = value
-		}
-	}
-}
-
-func (s *SkipList) Search1(value []byte) []byte {
+func (s *SkipList) search(value []byte) []byte {
 	node := s.root
 
 	for !bytes.Equal(node.key, value) {
@@ -169,7 +160,7 @@ func (s *SkipList) Create(key []byte, value []byte, timestamp int64, tombstone b
 }
 
 func (s *SkipList) Search(key []byte) (*memtable.MemtableEntry, bool) {
-	value := s.Search1(key)
+	value := s.search(key)
 	//fmt.Println("Search result:", value)
 	if value == nil {
 		return nil, false
