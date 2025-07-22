@@ -4,18 +4,20 @@ import (
 	"encoding/json"
 	"errors"
 	"time"
+
+	"github.com/iigor000/database/util"
 )
 
 func CreateBucket(db *Database) error {
 	bucket := map[string]interface{}{
-		"tokens":    5,
+		"tokens":    db.config.TokenBucket.StartTokens,
 		"timestamp": int64(time.Now().Unix()),
 	}
 	data, err := json.Marshal(bucket)
 	if err != nil {
 		return err
 	}
-	err = db.put(db.username, data)
+	err = db.put(util.TokenBucketPrefix+db.username, data)
 	if err != nil {
 		return err
 	}
@@ -27,13 +29,13 @@ func CheckBucket(db *Database) (bool, error) {
 		return true, nil
 	}
 
-	value, found, err := db.get(db.username)
+	value, found, err := db.get(util.TokenBucketPrefix + db.username)
 
 	if err != nil {
 		return false, err
 	}
 	if !found {
-		return false, errors.New("token bucket not foun for user: " + db.username)
+		return false, errors.New("token bucket not found for user: " + db.username)
 	}
 
 	var bucket map[string]interface{}
@@ -53,7 +55,7 @@ func CheckBucket(db *Database) (bool, error) {
 		if err != nil {
 			return false, err
 		}
-		err = db.put(db.username, data)
+		err = db.put(util.TokenBucketPrefix+db.username, data)
 		if err != nil {
 			return false, err
 		}
@@ -64,15 +66,15 @@ func CheckBucket(db *Database) (bool, error) {
 	if !ok {
 		return false, errors.New("timestamp not found in bucket for user: " + db.username)
 	}
-	if time.Now().Unix()-int64(timestamp.(float64)) > 120 {
+	if time.Now().Unix()-int64(timestamp.(float64)) > int64(db.config.TokenBucket.RefillIntervalS) {
 		// Reset tokens if more than 60 seconds have passed
-		bucket["tokens"] = 5
+		bucket["tokens"] = db.config.TokenBucket.StartTokens
 		bucket["timestamp"] = time.Now().Unix()
 		data, err := json.Marshal(bucket)
 		if err != nil {
 			return false, err
 		}
-		err = db.put(db.username, data)
+		err = db.put(util.TokenBucketPrefix+db.username, data)
 		if err != nil {
 			return false, err
 		}

@@ -15,32 +15,32 @@ func TestList(t *testing.T) {
 	s.Add([]byte("key10"), []byte("ten"))
 	s.Add([]byte("key12"), []byte("twelve"))
 
-	if string(s.Search1([]byte("key1"))) != "one" {
+	if string(s.search([]byte("key1"))) != "one" {
 		t.Error("Expected one")
 	}
-	if string(s.Search1([]byte("key4"))) != "four" {
+	if string(s.search([]byte("key4"))) != "four" {
 		t.Error("Expected four")
 	}
-	if string(s.Search1([]byte("key7"))) != "seven" {
+	if string(s.search([]byte("key7"))) != "seven" {
 		t.Error("Expected seven")
 	}
-	if string(s.Search1([]byte("key10"))) != "ten" {
+	if string(s.search([]byte("key10"))) != "ten" {
 		t.Error("Expected ten")
 	}
-	if string(s.Search1([]byte("key12"))) != "twelve" {
+	if string(s.search([]byte("key12"))) != "twelve" {
 		t.Error("Expected twelve")
 	}
 
 	s.Remove([]byte("key4"))
-	if string(s.Search1([]byte("key4"))) != "" {
+	if string(s.search([]byte("key4"))) != "" {
 		t.Error("Expected empty")
 	}
 	s.Remove([]byte("key7"))
-	if string(s.Search1([]byte("key7"))) != "" {
+	if string(s.search([]byte("key7"))) != "" {
 		t.Error("Expected empty")
 	}
 	s.Remove([]byte("key12"))
-	if string(s.Search1([]byte("key12"))) != "" {
+	if string(s.search([]byte("key12"))) != "" {
 		t.Error("Expected empty")
 	}
 }

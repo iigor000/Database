@@ -8,6 +8,7 @@ import (
 	"github.com/iigor000/database/structures/cache"
 	"github.com/iigor000/database/structures/memtable"
 	"github.com/iigor000/database/structures/sstable"
+	"github.com/iigor000/database/util"
 )
 
 //TODO: Dodati wal i kompresiju kad budu zavrseni
@@ -41,6 +42,11 @@ func (db *Database) Put(key string, value []byte) error {
 	}
 	if !allow {
 		return errors.New("user has reached the rate limit") // Korisnik ne moze da unese podatke
+	}
+
+	// Proveravamo da li je kljuc rezervisan
+	if util.CheckKeyReserved(key) {
+		return errors.New("key is reserved: " + key)
 	}
 
 	return db.put(key, value)
@@ -98,6 +104,11 @@ func (db *Database) Get(key string) ([]byte, bool, error) {
 		return nil, false, errors.New("user has reached the rate limit") // Korisnik ne moze da unese podatke
 	}
 
+	// Proveravamo da li je kljuc rezervisan
+	if util.CheckKeyReserved(key) {
+		return nil, false, errors.New("key is reserved: " + key)
+	}
+
 	return db.get(key)
 }
 
@@ -144,6 +155,11 @@ func (db *Database) Delete(key string) error {
 	}
 	if !allow {
 		return errors.New("user has reached the rate limit") // Korisnik ne moze da unese podatke
+	}
+
+	// Proveravamo da li je kljuc rezervisan
+	if util.CheckKeyReserved(key) {
+		return errors.New("key is reserved: " + key)
 	}
 
 	return db.delete(key)

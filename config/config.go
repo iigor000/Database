@@ -9,14 +9,15 @@ import (
 
 // Konfiguracijski fajl za blok organizaciju
 type Config struct {
-	Block    BlockConfig    `json:"block"`    // Konfiguracija bloka
-	Wal      WalConfig      `json:"wal"`      // Konfiguracija WAL-a
-	Memtable MemtableConfig `json:"memtable"` // Konfiguracija memtable-a
-	Skiplist SkiplistConfig `json:"skiplist"` // Konfiguracija skip liste
-	BTree    BTreeConfig    `json:"btree"`    // Konfiguracija binarnog stabla
-	SSTable  SSTableConfig  `json:"sstable"`  // Konfiguracija SSTable-a
-	Cache    CacheConfig    `json:"cache"`    // Konfiguracija kes memorije
-	LSMTree  LSMTreeConfig  `json:"lsmtree"`  // Konfiguracija LSM stabla
+	Block       BlockConfig       `json:"block"`        // Konfiguracija bloka
+	Wal         WalConfig         `json:"wal"`          // Konfiguracija WAL-a
+	Memtable    MemtableConfig    `json:"memtable"`     // Konfiguracija memtable-a
+	Skiplist    SkiplistConfig    `json:"skiplist"`     // Konfiguracija skip liste
+	BTree       BTreeConfig       `json:"btree"`        // Konfiguracija binarnog stabla
+	SSTable     SSTableConfig     `json:"sstable"`      // Konfiguracija SSTable-a
+	Cache       CacheConfig       `json:"cache"`        // Konfiguracija kes memorije
+	LSMTree     LSMTreeConfig     `json:"lsmtree"`      // Konfiguracija LSM stabla
+	TokenBucket TokenBucketConfig `json:"token_bucket"` // Konfiguracija token bucket-a
 }
 
 type BlockConfig struct {
@@ -47,6 +48,11 @@ type SSTableConfig struct {
 
 type CacheConfig struct {
 	Capacity int `json:"capacity"` // Kapacitet kes memorije
+}
+
+type TokenBucketConfig struct {
+	StartTokens     int `json:"start_tokens"`      // Broj tokena na pocetku
+	RefillIntervalS int `json:"refill_interval_s"` // Interval refilovanja tokena u sekundama
 }
 
 type LSMTreeConfig struct {
@@ -102,6 +108,10 @@ func LoadConfigFile(path string) (*Config, error) {
 			LevelSizeMultiplier:  10,  // Multiplikator velicine nivoa
 			// "SIZE-TIERED" KOMPAKCIJA
 			MaxSSTablesPerLevel: []int{4, 8, 16, 32, 64}, // Maksimalan broj SSTable-ova po nivou
+		},
+		TokenBucket: TokenBucketConfig{
+			StartTokens:     5,
+			RefillIntervalS: 120, // Interval refilovanja tokena u sekundama
 		},
 	}
 	file, err := os.Open(path)

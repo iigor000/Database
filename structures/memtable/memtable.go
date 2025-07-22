@@ -5,6 +5,7 @@ import (
 
 	"github.com/iigor000/database/config"
 	"github.com/iigor000/database/structures/adapter"
+	"github.com/iigor000/database/structures/hashmap"
 	"github.com/iigor000/database/structures/skiplist"
 )
 
@@ -112,10 +113,15 @@ type Memtable struct {
 // Konstruktor za Memtable strukturu, opcija za implementaciju skip listom ili binarnim stablom
 func NewMemtable(conf *config.Config, n int) *Memtable {
 	var struc adapter.MemtableStructure
-	if conf.Memtable.Structure == "skiplist" {
+	switch conf.Memtable.Structure {
+	case "skiplist":
 		struc = skiplist.MakeSkipList(conf.Skiplist.MaxHeight)
-	} else {
+	case "btree":
 		//struc = btree.NewBTree(conf.BTree.MinSize)
+		struc = skiplist.MakeSkipList(conf.Skiplist.MaxHeight)
+	case "hashmap":
+		struc = hashmap.NewHashMap()
+	default:
 		struc = skiplist.MakeSkipList(conf.Skiplist.MaxHeight)
 	}
 	return &Memtable{Structure: struc, Size: 0, Capacity: n}

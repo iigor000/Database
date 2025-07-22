@@ -84,3 +84,31 @@ func (hll *HLL) Add(value []byte) {
 		hll.reg[index] = zeroBits
 	}
 }
+
+func Serialize(hll HLL) []byte {
+	data := make([]byte, 1+len(hll.reg))
+	data[0] = hll.p
+	for i, val := range hll.reg {
+		data[i+1] = val
+	}
+	return data
+}
+
+func Deserialize(data []byte) HLL {
+	if len(data) < 1 {
+		panic("Invalid data length")
+	}
+	p := data[0]
+	if p < HLL_MIN_PRECISION || p > HLL_MAX_PRECISION {
+		panic("Precision must be between 4 and 16")
+	}
+	reg := make([]uint8, 1<<p)
+	for i := 0; i < len(reg); i++ {
+		reg[i] = data[i+1]
+	}
+	return HLL{
+		m:   1 << uint(p),
+		p:   uint8(p),
+		reg: reg,
+	}
+}
