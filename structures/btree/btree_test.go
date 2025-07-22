@@ -2,6 +2,7 @@ package btree
 
 import (
 	"bytes"
+	"fmt"
 	"testing"
 )
 
@@ -269,4 +270,118 @@ func TestEdgeCases(t *testing.T) {
 		t.Error("Search on empty tree should return nil")
 	}
 	emptyTree.Delete([]byte("key1")) // ne sme izazvati gresku
+
+	// Test update prazno stablo
+	tree1 := NewBTree(2)
+	if tree1.Update([]byte("key"), []byte("value")) {
+		t.Error("Update on empty tree should return false")
+	}
+
+	// Test nil key
+	tree2 := NewBTree(2)
+	tree2.Insert([]byte("key"), []byte("value"))
+	if tree2.Update(nil, []byte("value")) {
+		t.Error("Update with nil key should return false")
+	}
+
+	// Test azivanje na nil vrednost
+	tree3 := NewBTree(2)
+	tree3.Insert([]byte("key"), []byte("value"))
+	if !tree3.Update([]byte("key"), nil) {
+		t.Error("Update to nil value should return true")
+	}
+	if tree3.Search([]byte("key")) != nil {
+		t.Error("Search should return nil after updating value to nil")
+	}
+}
+
+func TestUpdate(t *testing.T) {
+	tree := NewBTree(2)
+
+	// Test updating non-existent key (should return false)
+	if tree.Update([]byte("key1"), []byte("value1")) {
+		t.Error("Update should return false for non-existent key")
+	}
+
+	// Insert some keys
+	tree.Insert([]byte("key1"), []byte("value1"))
+	tree.Insert([]byte("key2"), []byte("value2"))
+	tree.Insert([]byte("key3"), []byte("value3"))
+
+	// Test updating existing keys
+	testCases := []struct {
+		key         []byte
+		newValue    []byte
+		shouldExist bool
+	}{
+		{[]byte("key1"), []byte("new_value1"), true},
+		{[]byte("key2"), []byte("new_value2"), true},
+		{[]byte("key3"), []byte("new_value3"), true},
+		{[]byte("key4"), []byte("value4"), false}, // Doesn't exist
+	}
+
+	for _, tc := range testCases {
+		updated := tree.Update(tc.key, tc.newValue)
+		if updated != tc.shouldExist {
+			t.Errorf("Update returned %v for key %s, expected %v", updated, tc.key, tc.shouldExist)
+		}
+
+		// Verify the value was updated if it should exist
+		if tc.shouldExist {
+			val := tree.Search(tc.key)
+			if !bytes.Equal(val, tc.newValue) {
+				t.Errorf("Value for key %s not updated correctly, expected %s, got %s",
+					tc.key, tc.newValue, val)
+			}
+		}
+	}
+
+	// Test updating after splitting nodes
+	for i := 4; i < 20; i++ {
+		key := []byte(fmt.Sprintf("key%d", i))
+		tree.Insert(key, key)
+	}
+
+	// Update keys in different nodes
+	updateCases := []struct {
+		key      []byte
+		newValue []byte
+	}{
+		{[]byte("key1"), []byte("updated1")},
+		{[]byte("key2"), []byte("updated2")},
+		{[]byte("key4"), []byte("updated_4")},
+		{[]byte("key10"), []byte("updated_10")},
+	}
+
+	for _, tc := range updateCases {
+		if !tree.Update(tc.key, tc.newValue) {
+			t.Errorf("Failed to update key %s that should exist", tc.key)
+		}
+		val := tree.Search(tc.key)
+		if !bytes.Equal(val, tc.newValue) {
+			t.Errorf("Value for key %s not updated correctly after split, expected %s, got %s",
+				tc.key, tc.newValue, val)
+		}
+	}
+
+	// Test update doesn't affect tree structure
+	originalKeys := tree.SortedKeys()
+	for _, tc := range updateCases {
+		if !tree.Update(tc.key, []byte("final_update")) {
+			t.Errorf("Failed to update key %s in final check", tc.key)
+		}
+	}
+	newKeys := tree.SortedKeys()
+
+	if len(originalKeys) != len(newKeys) {
+		t.Errorf("Update changed number of keys in tree, was %d, now %d",
+			len(originalKeys), len(newKeys))
+	}
+
+	for i := range originalKeys {
+		if !bytes.Equal(originalKeys[i], newKeys[i]) {
+			t.Errorf("Update changed keys in tree, at index %d was %s, now %s",
+				i, originalKeys[i], newKeys[i])
+		}
+	}
 }
