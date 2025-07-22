@@ -2,7 +2,11 @@ package btree
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
+
+	"github.com/iigor000/database/structures/adapter"
+	memtable "github.com/iigor000/database/structures/adapter"
 )
 
 type BTree struct {
@@ -25,8 +29,59 @@ func NewBTree(t int) *BTree {
 	return &BTree{t: t}
 }
 
+func (t *BTree) Search(k []byte) (*adapter.MemtableEntry, bool) {
+	if t.root == nil {
+		return nil, false
+	}
+	value := t.Search1(k)
+	if value == nil {
+		return nil, false
+	}
+	entry := deserializeEntry(value)
+	return &entry, true
+}
+
+func (t *BTree) Update(k, v []byte, timestamp int64, tombstone bool) {
+	if t.root == nil {
+		return
+	}
+	_, exist := t.Search(k)
+	entry := memtable.MemtableEntry{
+		Key:       k,
+		Value:     v,
+		Timestamp: timestamp,
+		Tombstone: tombstone,
+	}
+	value := serializeEntry(entry)
+	if exist {
+		t.update(k, value)
+	} else {
+		t.Insert(k, value)
+	}
+
+}
+
+func (t *BTree) Delete(k []byte) {
+	if t.root == nil {
+		return
+	}
+	entry, found := t.Search(k)
+	if !found {
+		return // kljuc ne postoji
+	}
+	entry.Tombstone = true // oznacavamo kao obrisano
+	value := serializeEntry(*entry)
+	t.Delete1(k) // uklanjamo kljuc iz stabla
+	t.Insert(k, value)
+}
+
+// update azurira vrednost za kljuc k u B stablu
+func (t *BTree) update(k, v []byte) {
+
+}
+
 // Search pretrazuje B stablo za kljucem k i vraca odgovarajucu vrednost
-func (t *BTree) Search(k []byte) []byte {
+func (t *BTree) Search1(k []byte) []byte {
 	if t.root == nil {
 		return nil
 	}
@@ -162,7 +217,7 @@ func (t *BTree) insertNonFull(x *Node, k, v []byte) {
 }
 
 // Delete uklanja kljuc k iz B stabla
-func (t *BTree) Delete(k []byte) {
+func (t *BTree) Delete1(k []byte) {
 	if t.root == nil {
 		return
 	}
@@ -437,4 +492,39 @@ func collectSortedKeys(x *Node) [][]byte {
 
 func (t *BTree) Clear() {
 	t.root = nil
+}
+
+func serializeEntry(entry memtable.MemtableEntry) []byte {
+	buf := new(bytes.Buffer)
+	var keyLen int64 = int64(len(entry.Key))
+	binary.Write(buf, binary.BigEndian, keyLen)
+	buf.Write(entry.Key)
+	var valueLen int64 = int64(len(entry.Value))
+	binary.Write(buf, binary.BigEndian, valueLen)
+	buf.Write(entry.Value)
+	binary.Write(buf, binary.BigEndian, entry.Timestamp)
+	binary.Write(buf, binary.BigEndian, entry.Tombstone)
+	return buf.Bytes()
+}
+
+func deserializeEntry(data []byte) memtable.MemtableEntry {
+	buf := bytes.NewReader(data)
+	var keyLen int64
+	binary.Read(buf, binary.BigEndian, &keyLen)
+	key := make([]byte, keyLen)
+	binary.Read(buf, binary.BigEndian, &key)
+	var valueLen int64
+	binary.Read(buf, binary.BigEndian, &valueLen)
+	value := make([]byte, valueLen)
+	binary.Read(buf, binary.BigEndian, &value)
+	var timestamp int64
+	binary.Read(buf, binary.BigEndian, &timestamp)
+	var tombstone bool
+	binary.Read(buf, binary.BigEndian, &tombstone)
+	return memtable.MemtableEntry{
+		Key:       key,
+		Value:     value,
+		Timestamp: timestamp,
+		Tombstone: tombstone,
+	}
 }

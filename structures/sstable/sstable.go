@@ -172,7 +172,6 @@ func buildSummary(conf *config.Config, index *Index, gen int, path string, singl
 			// Pravimo summary sa onolko koliko je ostalo
 			sr := SummaryRecord{
 				FirstKey:        index.Records[i].Key,
-				LastKey:         index.Records[len(index.Records)-1].Key,
 				IndexOffset:     index.Records[i].IndexOffset,
 				NumberOfRecords: len(index.Records) - i,
 			}
@@ -181,13 +180,15 @@ func buildSummary(conf *config.Config, index *Index, gen int, path string, singl
 		} else {
 			sr := SummaryRecord{
 				FirstKey:        index.Records[i].Key,
-				LastKey:         index.Records[i+conf.SSTable.SummaryLevel-1].Key,
 				IndexOffset:     index.Records[i].IndexOffset,
 				NumberOfRecords: conf.SSTable.SummaryLevel,
 			}
 			sb.Records = append(sb.Records, sr)
 		}
 	}
+
+	sb.FirstKey = sb.Records[0].FirstKey
+	sb.LastKey = index.Records[len(index.Records)-1].Key
 	if !singleFile {
 		err := sb.WriteSummary(filename, conf)
 		if err != nil {

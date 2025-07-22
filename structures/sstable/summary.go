@@ -10,21 +10,30 @@ import (
 
 // SummaryBlock struktura je skup IndexRecord-a
 // FirstKey je ključ prvog zapisa u bloku
-// LastKey je ključ poslednjeg zapisa u bloku
 type SummaryRecord struct {
 	FirstKey        []byte
-	LastKey         []byte
 	IndexOffset     int // Offset u Index segmentu gde se nalazi ovaj blok
 	NumberOfRecords int
 }
 
 type Summary struct {
 	Records     []SummaryRecord
+	FirstKey    []byte // Prvi kljuc u Summary
+	LastKey     []byte // Poslednji kljuc u Summary
 	SummaryFile File
 }
 
 func (sb *Summary) WriteSummary(path string, conf *config.Config) error {
 	bm := block_organization.NewBlockManager(conf)
+	// Prvo upisujemo header
+	header, err := sb.SerializeHeader()
+	if err != nil {
+		return fmt.Errorf("failed to serialize summary header: %w", err)
+	}
+	if _, err := bm.AppendBlock(path, header); err != nil {
+		return fmt.Errorf("failed to write summary header: %w", err)
+	}
+
 	for _, record := range sb.Records {
 		err := record.WriteSummaryRecord(path, bm)
 		if err != nil {
@@ -49,8 +58,6 @@ func (sr *SummaryRecord) Serialize() ([]byte, error) {
 	// Prvo upisujemo duzinu kljuca
 	serializedData = append(serializedData, byte(len(sr.FirstKey)))
 	serializedData = append(serializedData, sr.FirstKey...)
-	serializedData = append(serializedData, byte(len(sr.LastKey)))
-	serializedData = append(serializedData, sr.LastKey...)
 
 	// Zatim upisujemo IndexOffset i NumberOfRecords
 	serializedData = append(serializedData, byte(sr.IndexOffset>>24), byte(sr.IndexOffset>>16), byte(sr.IndexOffset>>8), byte(sr.IndexOffset))
@@ -59,11 +66,36 @@ func (sr *SummaryRecord) Serialize() ([]byte, error) {
 	return serializedData, nil
 }
 
+func (s *Summary) SerializeHeader() ([]byte, error) {
+	serializedData := make([]byte, 0)
+
+	// Prvo upisujemo duzinu FirstKey
+	serializedData = append(serializedData, byte(len(s.FirstKey)))
+	serializedData = append(serializedData, s.FirstKey...)
+
+	// Zatim upisujemo duzinu LastKey
+	serializedData = append(serializedData, byte(len(s.LastKey)))
+	serializedData = append(serializedData, s.LastKey...)
+
+	return serializedData, nil
+}
+
 func ReadSummary(path string, conf *config.Config) (*Summary, error) {
 	bm := block_organization.NewBlockManager(conf)
 	block_num := 0 // Pocinjemo od prvog bloka
 	summary := &Summary{}
+	data, err := bm.ReadBlock(path, block_num)
+	if err != nil {
+		if err.Error() == "EOF" {
+			return nil, fmt.Errorf("summary file is empty: %w", err)
+		}
+		return nil, fmt.Errorf("error reading summary file: %w", err)
+	}
 
+	if err := summary.DeserializeHeader(data); err != nil {
+		return nil, fmt.Errorf("failed to deserialize summary header: %w", err)
+	}
+	block_num++
 	for {
 		block, err := bm.ReadBlock(path, block_num)
 		if err != nil {
@@ -101,15 +133,31 @@ func (sr *SummaryRecord) Deserialize(data []byte) error {
 	sr.FirstKey = data[1 : 1+keyLen]
 
 	offset := 1 + keyLen
-	lastKeyLen := int(data[offset])
-	if len(data) < offset+1+lastKeyLen+8 {
-		return fmt.Errorf("data too short to read last key length and last key: %d bytes", len(data))
+	if len(data) < offset+8 {
+		return fmt.Errorf("data too short to read index offset and number of records: %d bytes", len(data))
 	}
-	sr.LastKey = data[offset+1 : offset+1+lastKeyLen]
-
-	offset += 1 + lastKeyLen
 	sr.IndexOffset = int(data[offset])<<24 | int(data[offset+1])<<16 | int(data[offset+2])<<8 | int(data[offset+3])
 	sr.NumberOfRecords = int(data[offset+4])<<24 | int(data[offset+5])<<16 | int(data[offset+6])<<8 | int(data[offset+7])
+
+	return nil
+}
+
+func (s *Summary) DeserializeHeader(data []byte) error {
+	if len(data) < 2 {
+		return fmt.Errorf("data too short to deserialize Summary header: %d bytes", len(data))
+	}
+
+	firstKeySize := int(data[0])
+	if len(data) < 1+firstKeySize+1 {
+		return fmt.Errorf("data too short to read first key size and first key: %d bytes", len(data))
+	}
+	s.FirstKey = data[1 : 1+firstKeySize]
+
+	lastKeySize := int(data[1+firstKeySize])
+	if len(data) < 1+firstKeySize+1+lastKeySize {
+		return fmt.Errorf("data too short to read last key size and last key: %d bytes", len(data))
+	}
+	s.LastKey = data[1+firstKeySize+1 : 1+firstKeySize+1+lastKeySize]
 
 	return nil
 }

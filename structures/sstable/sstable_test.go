@@ -59,7 +59,7 @@ func TestSSTable(t *testing.T) {
 	// Print Summary Records
 	println("Summary Records:")
 	for _, record := range sstable.Summary.Records {
-		println("FirstKey:", string(record.FirstKey), "LastKey:", string(record.LastKey), "IndexOffset:", record.IndexOffset, "NumberOfRecords:", record.NumberOfRecords)
+		println("FirstKey:", string(record.FirstKey), "LastKey:", "IndexOffset:", record.IndexOffset, "NumberOfRecords:", record.NumberOfRecords)
 	}
 
 }
@@ -111,8 +111,9 @@ func TestSSTableRead(t *testing.T) {
 	}
 	// Print Summary Records
 	println("Summary Records:")
+	println("FirstKey:", string(sstable.Summary.FirstKey), "LastKey:", string(sstable.Summary.LastKey))
 	for _, record := range sstable.Summary.Records {
-		println("FirstKey:", string(record.FirstKey), "LastKey:", string(record.LastKey), "IndexOffset:", record.IndexOffset, "NumberOfRecords:", record.NumberOfRecords)
+		println("FirstKey:", string(record.FirstKey), "IndexOffset:", record.IndexOffset, "NumberOfRecords:", record.NumberOfRecords)
 	}
 	println("Testing SSTable read...")
 	// Read the SSTable from disk
@@ -131,9 +132,10 @@ func TestSSTableRead(t *testing.T) {
 		println("Key:", string(record.Key), "Offset:", record.Offset)
 	}
 	// Print Summary Records
+	println("Summary FirstKey:", string(readSSTable.Summary.FirstKey), "LastKey:", string(readSSTable.Summary.LastKey))
 	println("Summary Records:")
 	for _, record := range readSSTable.Summary.Records {
-		println("FirstKey:", string(record.FirstKey), "LastKey:", string(record.LastKey), "IndexOffset:", record.IndexOffset, "NumberOfRecords:", record.NumberOfRecords)
+		println("FirstKey:", string(record.FirstKey), "IndexOffset:", record.IndexOffset, "NumberOfRecords:", record.NumberOfRecords)
 	}
 
 }
@@ -165,7 +167,7 @@ func TestSSTableIterate(t *testing.T) {
 	// Print Summary Records
 	println("Summary Records:")
 	for _, record := range sstable.Summary.Records {
-		println("FirstKey:", string(record.FirstKey), "LastKey:", string(record.LastKey), "IndexOffset:", record.IndexOffset, "NumberOfRecords:", record.NumberOfRecords)
+		println("FirstKey:", string(record.FirstKey), "LastKey:", "IndexOffset:", record.IndexOffset, "NumberOfRecords:", record.NumberOfRecords)
 	}
 	bm := block_organization.NewBlockManager(conf)
 	it := sstable.NewSSTableIterator(bm)
