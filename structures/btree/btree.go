@@ -11,7 +11,7 @@ type BTree struct {
 }
 
 type Node struct {
-	keys     [][]byte // kljucevi u cvoru (sada []byte umesto byte)
+	keys     [][]byte // kljucevi u cvoru
 	values   [][]byte // vrednosti povezane sa kljucevima
 	children []*Node  // pokazivaci na decu
 	leaf     bool     // da li je list
@@ -159,6 +159,37 @@ func (t *BTree) insertNonFull(x *Node, k, v []byte) {
 		}
 		t.insertNonFull(x.children[i], k, v)
 	}
+}
+
+// Azurira vrednost ukoliko kljuc povezan s tom vrednoscu postoji u BTree
+// Vraca true ako postoji i azuriran je, u suportonom false
+func (t *BTree) Update(k, v []byte) bool {
+	if t.root == nil {
+		return false
+	}
+	return updateNode(t.root, k, v)
+}
+
+// updateNode rekurzivno trazi kljuc i ayurira njegovu vrednost ukoliko postoji
+func updateNode(x *Node, k, v []byte) bool {
+	i := 0
+	for i < len(x.keys) && bytesCompare(k, x.keys[i]) > 0 {
+		i++
+	}
+
+	if i < len(x.keys) && bytesEqual(k, x.keys[i]) {
+		// Nadjen kljuc, azuriraj vrednost
+		x.values[i] = v
+		return true
+	}
+
+	if x.leaf {
+		// Kljuc nije pronadjen
+		return false
+	}
+
+	// Nastavi pretragu u odgovarajucem detetu
+	return updateNode(x.children[i], k, v)
 }
 
 // Delete uklanja kljuc k iz B stabla
