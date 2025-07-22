@@ -10,25 +10,29 @@ type HashMap struct {
 	data map[string]*adapter.MemtableEntry
 }
 
-func NewHashMap(capacity int) *HashMap {
+func NewHashMap() *HashMap {
 	return &HashMap{
 		data: make(map[string]*adapter.MemtableEntry),
 	}
 }
 
-func (h *HashMap) Search(key string) (*adapter.MemtableEntry, bool) {
-	entry, found := h.data[key]
+func (h *HashMap) Search(key []byte) (*adapter.MemtableEntry, bool) {
+	entry, found := h.data[string(key)]
 	if !found {
 		return &adapter.MemtableEntry{}, false
 	}
 	return entry, true
 }
 
-func (h *HashMap) Update(key string, value adapter.MemtableEntry) {
-	h.data[key] = &value
+func (h *HashMap) Update(key []byte, value []byte, timestamp int64, tombstone bool) {
+	h.data[string(key)] = &adapter.MemtableEntry{
+		Value:     value,
+		Timestamp: timestamp,
+		Tombstone: tombstone,
+	}
 }
 
-func (h *HashMap) Delete(key string) {
+func (h *HashMap) Delete(key []byte) {
 	record, found := h.Search(key)
 	if !found {
 		return
