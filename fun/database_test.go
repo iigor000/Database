@@ -1,6 +1,7 @@
 package fun
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/iigor000/database/config"
@@ -90,5 +91,44 @@ func TestDatabase_Delete(t *testing.T) {
 	}
 	if found {
 		t.Errorf("Expected key %s to be deleted, but it was found", key)
+	}
+}
+
+func TestDatabase_PutMany(t *testing.T) {
+	// Test inserting multiple key-value pairs into the database
+	config, err := config.LoadConfigFile("config/config.json")
+	if err != nil {
+		t.Fatalf("Failed to load config: %v", err)
+	}
+
+	username := "testuser"
+	db, err := NewDatabase(config, username)
+	if err != nil {
+		t.Fatalf("Failed to create database: %v", err)
+	}
+
+	CreateBucket(db)
+
+	entries := make(map[string][]byte)
+
+	for i := 0; i < 500; i++ {
+		entries[fmt.Sprintf("key%d", i)] = []byte(fmt.Sprintf("value%d", i))
+	}
+
+	for k, v := range entries {
+		err = db.Put(k, v)
+		if err != nil {
+			t.Fatalf("Failed to put value for key %s: %v", k, err)
+		}
+	}
+
+	for k, v := range entries {
+		storedValue, found, err := db.get(k)
+		if err != nil {
+			t.Fatalf("Failed to get value for key %s: %v", k, err)
+		}
+		if !found || string(storedValue) != string(v) {
+			t.Errorf("Expected value for key %s to be %s, got %s", k, v, storedValue)
+		}
 	}
 }
