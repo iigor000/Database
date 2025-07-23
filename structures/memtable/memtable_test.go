@@ -93,10 +93,13 @@ func TestMemtables(t *testing.T) {
 	cf := config.Config{Memtable: config.MemtableConfig{
 		NumberOfMemtables: 2,
 		NumberOfEntries:   5,
-		Structure:         "skiplist",
+		Structure:         "btree",
 	},
 		Skiplist: config.SkiplistConfig{
 			MaxHeight: 3},
+		BTree: config.BTreeConfig{
+			MinSize: 16,
+		},
 	}
 	ms := NewMemtables(&cf)
 	for i := 0; i < cf.Memtable.NumberOfMemtables; i++ {

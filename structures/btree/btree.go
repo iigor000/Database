@@ -23,6 +23,7 @@ type Node struct {
 
 // NewBTree kreira novo B stablo sa zadatim minimalnim stepenom t
 func NewBTree(t int) *BTree {
+	println("Creating new BTree with minimum degree:", t)
 	if t < 2 {
 		t = 2 // minimalni stepen ne moze biti manji od 2
 	}
@@ -30,6 +31,7 @@ func NewBTree(t int) *BTree {
 }
 
 func (t *BTree) Search(k []byte) (*adapter.MemtableEntry, bool) {
+	println("Searching for key:", string(k))
 	if t.root == nil {
 		return nil, false
 	}
@@ -42,6 +44,7 @@ func (t *BTree) Search(k []byte) (*adapter.MemtableEntry, bool) {
 }
 
 func (t *BTree) Update(k, v []byte, timestamp int64, tombstone bool) {
+	println("Updating key:", string(k))
 	if t.root == nil {
 		return
 	}
@@ -56,12 +59,14 @@ func (t *BTree) Update(k, v []byte, timestamp int64, tombstone bool) {
 	if exist {
 		t.update(k, value)
 	} else {
+		println("Inserting new key:", string(k))
 		t.Insert(k, value)
 	}
 
 }
 
 func (t *BTree) Delete(k []byte) {
+	println("Deleting key:", string(k))
 	if t.root == nil {
 		return
 	}
@@ -73,11 +78,6 @@ func (t *BTree) Delete(k []byte) {
 	value := serializeEntry(*entry)
 	t.Delete1(k) // uklanjamo kljuc iz stabla
 	t.Insert(k, value)
-}
-
-// update azurira vrednost za kljuc k u B stablu
-func (t *BTree) update(k, v []byte) {
-
 }
 
 // Search pretrazuje B stablo za kljucem k i vraca odgovarajucu vrednost
@@ -218,7 +218,7 @@ func (t *BTree) insertNonFull(x *Node, k, v []byte) {
 
 // Azurira vrednost ukoliko kljuc povezan s tom vrednoscu postoji u BTree
 // Vraca true ako postoji i azuriran je, u suportonom false
-func (t *BTree) Update(k, v []byte) bool {
+func (t *BTree) update(k, v []byte) bool {
 	if t.root == nil {
 		return false
 	}

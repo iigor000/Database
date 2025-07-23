@@ -5,6 +5,7 @@ import (
 
 	"github.com/iigor000/database/config"
 	"github.com/iigor000/database/structures/adapter"
+	"github.com/iigor000/database/structures/btree"
 	"github.com/iigor000/database/structures/hashmap"
 	"github.com/iigor000/database/structures/skiplist"
 )
@@ -117,8 +118,7 @@ func NewMemtable(conf *config.Config, n int) *Memtable {
 	case "skiplist":
 		struc = skiplist.MakeSkipList(conf.Skiplist.MaxHeight)
 	case "btree":
-		//struc = btree.NewBTree(conf.BTree.MinSize)
-		struc = skiplist.MakeSkipList(conf.Skiplist.MaxHeight)
+		struc = btree.NewBTree(16)
 	case "hashmap":
 		struc = hashmap.NewHashMap()
 	default:

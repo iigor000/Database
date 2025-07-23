@@ -38,11 +38,11 @@ func TestInsertAndSearch(t *testing.T) {
 	}
 
 	// Pretraga postojecih i nepostojecih kljuceva
-	val := tree.Search([]byte("key1"))
+	val := tree.Search1([]byte("key1"))
 	if !bytes.Equal(val, []byte("value1")) {
 		t.Error("Search returned incorrect value")
 	}
-	val = tree.Search([]byte("nonexistent"))
+	val = tree.Search1([]byte("nonexistent"))
 	if val != nil {
 		t.Error("Search should return nil for non-existent key")
 	}
@@ -65,7 +65,7 @@ func TestInsertAndSearch(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		val := tree.Search(tc.key)
+		val := tree.Search1(tc.key)
 		if !bytes.Equal(val, tc.value) {
 			t.Errorf("Search for key %s returned incorrect value, expected %s, got %s", tc.key, tc.value, val)
 		}
