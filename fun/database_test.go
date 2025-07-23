@@ -101,7 +101,7 @@ func TestDatabase_PutMany(t *testing.T) {
 		t.Fatalf("Failed to load config: %v", err)
 	}
 
-	username := "testuser"
+	username := "root"
 	db, err := NewDatabase(config, username)
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
@@ -127,6 +127,7 @@ func TestDatabase_PutMany(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to get value for key %s: %v", k, err)
 		}
+		//println("Key:", k, "Value:", string(storedValue))
 		if !found || string(storedValue) != string(v) {
 			t.Errorf("Expected value for key %s to be %s, got %s", k, v, storedValue)
 		}

@@ -73,7 +73,7 @@ func (db *Database) put(key string, value []byte) error {
 
 	if shouldFlush {
 		// Flush Memtable na disk
-
+		println("Flushing Memtable to disk...")
 		sstable.FlushSSTable(db.config, *db.memtables.Memtables[db.memtables.NumberOfMemtables-1], db.memtables.GenToFlush, db.compression)
 
 		// Proverava uslov za kompakciju i vrši kompakciju ako je potrebno (počinje proveru od prvog nivoa)
@@ -87,7 +87,7 @@ func (db *Database) put(key string, value []byte) error {
 		}
 
 		// Dodajemo novi Memtable na kraj
-		db.memtables.Memtables[db.memtables.NumberOfMemtables-1] = memtable.NewMemtable(db.config, db.config.Memtable.NumberOfEntries)
+		db.memtables.Memtables[db.memtables.NumberOfMemtables-1] = memtable.NewMemtable(db.config)
 
 		//TODO: Povecati generaciju za flush
 		db.memtables.GenToFlush++

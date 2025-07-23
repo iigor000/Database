@@ -16,13 +16,15 @@ type Memtables struct {
 	Memtables         map[int]*Memtable
 	conf              *config.Config
 	GenToFlush        int // Generacija za flush, koristi se za SSTable
+
 }
 
 // Konstruktor za Memtables strukturu
 func NewMemtables(conf *config.Config) *Memtables {
+	println(conf.Memtable.NumberOfEntries)
 	memtables := make(map[int]*Memtable)
 	for i := 0; i < conf.Memtable.NumberOfMemtables; i++ {
-		memtables[i] = NewMemtable(conf, conf.Memtable.NumberOfEntries)
+		memtables[i] = NewMemtable(conf)
 	}
 
 	return &Memtables{
@@ -37,30 +39,16 @@ func NewMemtables(conf *config.Config) *Memtables {
 // Update dodaje ili azurira na osnovu kljuca u Memtables
 func (m *Memtables) Update(key []byte, value []byte, timestamp int64, tombstone bool) bool {
 	// Prolazimo kroz sve Memtable i azuriramo
-	firstNotFull := -1
+
 	flushed := false
-	// Trazimo Memtable koji sadrzi dati kljuc i uaput proveravamo koji je prvi koji nije pun
-	// Ako ne nadjemo, onda cemo ga dodati u prvi koji nije pun
-	for i := 0; i < m.NumberOfMemtables; i++ {
-		memtable := m.Memtables[i]
-		// Proveravamo da li postoji dati kljuc
-		_, exist := memtable.Search(key)
-		if exist {
-			// Ako postoji, azuriramo vrednost
-			memtable.Update(key, value, timestamp, tombstone)
-			return false
-		} else {
-			if firstNotFull == -1 && memtable.Size < memtable.Capacity {
-				firstNotFull = i
-			}
-		}
-	}
-	// Ako nismo nasli Memtable koji sadrzi dati kljuc, a imamo prvi koji nije pun, onda ga azuriramo
-	if firstNotFull != -1 {
-		m.Memtables[firstNotFull].Update(key, value, timestamp, tombstone)
-	}
-	if firstNotFull == m.NumberOfMemtables-1 {
-		if m.Memtables[firstNotFull].Size >= m.Memtables[firstNotFull].Capacity {
+	i := m.GetMemtableToChange()
+	println(i)
+	m.Memtables[i].Update(key, value, timestamp, tombstone)
+
+	if i == m.NumberOfMemtables-1 {
+		println("Last Memtable is being updated, checking if it needs to be flushed...")
+		println("Memtable size:", m.Memtables[i].Size, "Capacity:", m.Memtables[i].Capacity)
+		if m.Memtables[i].Size >= m.Memtables[i].Capacity {
 			// Ako je poslednji Memtable pun, onda ga flush-ujemo na disk
 			//m.memtables[0].FlushToDisk(m.conf, m.genToFlush)
 			flushed = true
@@ -112,7 +100,7 @@ type Memtable struct {
 }
 
 // Konstruktor za Memtable strukturu, opcija za implementaciju skip listom ili binarnim stablom
-func NewMemtable(conf *config.Config, n int) *Memtable {
+func NewMemtable(conf *config.Config) *Memtable {
 	var struc adapter.MemtableStructure
 	switch conf.Memtable.Structure {
 	case "skiplist":
@@ -124,12 +112,13 @@ func NewMemtable(conf *config.Config, n int) *Memtable {
 	default:
 		struc = skiplist.MakeSkipList(conf.Skiplist.MaxHeight)
 	}
-	return &Memtable{Structure: struc, Size: 0, Capacity: n}
+	return &Memtable{Structure: struc, Size: 0, Capacity: conf.Memtable.NumberOfEntries}
 }
 
 // CRUD operacije
 // Update dodaje ili azurira na osnovu kljuca u Memtable
 func (m *Memtable) Update(key []byte, value []byte, timestamp int64, tombstone bool) {
+	//println("Updating key:", string(key), "with value:", string(value), "timestamp:", timestamp, "tombstone:", tombstone)
 	_, exist := m.Search(key)
 	if !exist {
 		m.Keys = append(m.Keys, key)
@@ -174,4 +163,17 @@ func (m *Memtable) GetAllEntries() []adapter.MemtableEntry {
 		}
 	}
 	return entries
+}
+
+func (m *Memtables) GetMemtableToChange() int {
+
+	for i := 0; i < m.NumberOfMemtables; i++ {
+		memtable := m.Memtables[i]
+		println(memtable.Capacity)
+
+		if memtable.Size < memtable.Capacity {
+			return i
+		}
+	}
+	return -1
 }
