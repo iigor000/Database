@@ -29,11 +29,9 @@
   "lsmtree": {
     "max_level": 5,
     "compaction_algorithm": "size_tiered",
-    "use_size_based_compaction": true,
-    "max_level_size_mb": 100,
     "base_sstable_limit": 4,
     "level_size_multiplier": 10,
-    "max_sstables_per_level": [4, 8, 16, 32, 64]
+    "max_sstables_per_level": 8
   },
   "token_bucket": {
     "start_tokens": 10,

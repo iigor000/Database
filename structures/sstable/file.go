@@ -11,6 +11,12 @@ type File struct {
 	SizeOnDisk int64  // Velicina fajla na disku
 }
 
+// FileExists proverava da li fajl postoji na datoj putanji
+func FileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil || !os.IsNotExist(err)
+}
+
 func CreateFileName(path string, gen int, element string, ext string) string {
 	return fmt.Sprintf("%s/usertable-%06d-%s.%s", path, gen, element, ext)
 }

@@ -117,7 +117,7 @@ func TestSSTableRead(t *testing.T) {
 	}
 	println("Testing SSTable read...")
 	// Read the SSTable from disk
-	readSSTable := NewSSTable(conf.SSTable.SstableDirectory, conf, sstable.Gen)
+	readSSTable := NewSSTable(conf, sstable.Level, sstable.Gen)
 	if readSSTable == nil {
 		t.Fatal("ReadSSTable returned nil")
 	}
@@ -160,7 +160,7 @@ func TestSSTableIterate(t *testing.T) {
 			BlockSize: 4096,
 		},
 	}
-	sstable, err := StartSSTable(1, conf)
+	sstable, err := StartSSTable(1, 1, conf)
 	if err != nil {
 		t.Fatalf("Failed to start SSTable: %v", err)
 	}
@@ -232,7 +232,7 @@ func TestSSTableScan(t *testing.T) {
 			BlockSize: 4096,
 		},
 	}
-	sstable, err := StartSSTable(1, conf)
+	sstable, err := StartSSTable(1, 1, conf)
 	if err != nil {
 		t.Fatalf("Failed to start SSTable: %v", err)
 	}

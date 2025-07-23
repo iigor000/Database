@@ -1,9 +1,11 @@
 package sstable
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
+	"sort"
 
 	"github.com/iigor000/database/config"
 	"github.com/iigor000/database/structures/adapter"
@@ -21,6 +23,7 @@ type SSTable struct {
 	Summary        *Summary
 	Filter         bloomfilter.BloomFilter
 	Metadata       *merkle.MerkleTree
+	Level          int // Nivo u LSM stablu
 	Gen            int
 	UseCompression bool
 	CompressionKey *compression.Dictionary
@@ -32,8 +35,9 @@ type SSTable struct {
 func FlushSSTable(conf *config.Config, memtable memtable.Memtable, generation int) *SSTable {
 	var sstable SSTable
 	sstable.UseCompression = conf.SSTable.UseCompression
+	sstable.Level = 1 // Postavljamo nivo na 1, jer se Memtable flushuje kao SSTable na prvi nivo
 	sstable.Gen = generation
-	path := fmt.Sprintf("%s/%d", conf.SSTable.SstableDirectory, generation)
+	path := fmt.Sprintf("%s/%d/%d", conf.SSTable.SstableDirectory, sstable.Level, sstable.Gen)
 	err := CreateDirectoryIfNotExists(path)
 	if err != nil {
 		panic("Error creating directory for SSTable: " + err.Error())
@@ -262,12 +266,13 @@ func ReadSingleFileSSTable(sstable *SSTable, dir string, gen int, conf *config.C
 }
 
 // NewSSTable kreira novi SSTable iz fajlova
-func NewSSTable(dir string, conf *config.Config, gen int) *SSTable {
+func NewSSTable(conf *config.Config, level int, gen int) *SSTable {
 	sstable := &SSTable{
 		CompressionKey: compression.NewDictionary(),
 		Gen:            gen,
+		Level:          level,
 	}
-	dir = fmt.Sprintf("%s/%d", dir, gen)
+	dir := fmt.Sprintf("%s/%d/%d", conf.SSTable.SstableDirectory, level, gen)
 	// Proveravamo da li direktorijum postoji
 	//err := CreateDirectoryIfNotExists(dir)
 	if conf.SSTable.SingleFile {
@@ -405,12 +410,13 @@ func WriteSSTable(sstable *SSTable, dir string, conf *config.Config) error {
 
 // NewEmptySSTable kreira prazan SSTable
 // Pomocna funkcija za LSM
-func NewEmptySSTable(conf *config.Config, generation int) *SSTable {
+func NewEmptySSTable(conf *config.Config, level int, generation int) *SSTable {
 	sstable := &SSTable{
 		Data:           &Data{Records: []DataRecord{}},
 		Index:          &Index{Records: []IndexRecord{}},
 		Summary:        &Summary{Records: []SummaryRecord{}},
 		Gen:            generation,
+		Level:          level,
 		UseCompression: conf.SSTable.UseCompression,
 		CompressionKey: compression.NewDictionary(),
 	}
@@ -418,6 +424,55 @@ func NewEmptySSTable(conf *config.Config, generation int) *SSTable {
 		sstable.CompressionKey = compression.NewDictionary()
 	}
 	return sstable
+}
+
+// Get traži ključ u SSTable-u i vraća odgovarajući DataRecord
+// Pomocna funkcija za LSM
+// TODO: Dodati SingleFile opciju
+func (s *SSTable) Get(conf *config.Config, key []byte) (*DataRecord, error) {
+	// Proveri Bloom filter pre pretrage
+	if !s.Filter.Read(key) {
+		return nil, nil
+	}
+
+	// Ako Bloom filter sadrži ključ, proveri u summary i index
+	for _, summary := range s.Summary.Records {
+		if bytes.Compare(key, summary.FirstKey) < 0 || bytes.Compare(key, summary.LastKey) > 0 {
+			continue // Ključ nije u ovom summary bloku
+		}
+
+		// Ako je ključ unutar opsega summary, proveri index
+		// indexOffset je offset u Index segmentu gde se nalazi ovaj summary
+		start := summary.IndexOffset
+		end := start + summary.NumberOfRecords
+
+		indexBlock := s.Index.Records[start:end]
+
+		// Binarno pretraži ključ u indexBlock-u
+		i := sort.Search(len(indexBlock), func(i int) bool {
+			return bytes.Compare(indexBlock[i].Key, key) >= 0
+		})
+
+		if i < len(indexBlock) && bytes.Equal(indexBlock[i].Key, key) {
+			// Ako je ključ pronađen u indexu, pročitaj podatke iz Data segmenta
+			dataOffset := indexBlock[i].Offset
+			dir := fmt.Sprintf("%s/%d/%d", conf.SSTable.SstableDirectory, s.Level, s.Gen)
+			filename := CreateFileName(dir, s.Gen, "Data", "db")
+
+			record, err := s.Data.ReadRecordAtOffset(filename, conf, s.CompressionKey, dataOffset)
+			if err != nil {
+				return nil, err
+			}
+
+			if record.Tombstone {
+				return nil, fmt.Errorf("record marked as deleted") // Ako je tombstone, ključ je obrisan
+			}
+
+			return record, nil
+		}
+	}
+
+	return nil, nil
 }
 
 // Pomocna funkcija za PreffixIterate i RangeIterate
@@ -455,12 +510,12 @@ func (s *SSTable) ReadRecordWithKey(bm *block_organization.BlockManager, blockNu
 	}, nextBlock
 }
 
-func StartSSTable(gen int, conf *config.Config) (*SSTable, error) {
+func StartSSTable(level int, gen int, conf *config.Config) (*SSTable, error) {
 	// Ucitavamo bloom filter i summary iz fajla
 	if gen < 1 {
 		return nil, fmt.Errorf("invalid generation number: %d", gen)
 	}
-	dir := fmt.Sprintf("%s/%d", conf.SSTable.SstableDirectory, gen)
+	dir := fmt.Sprintf("%s/%d/%d", conf.SSTable.SstableDirectory, level, gen)
 	// Ucitavamo BloomFiler
 	bfPath := CreateFileName(dir, gen, "Filter", "db")
 	bf, err := ReadBloomFilter(bfPath, conf)
@@ -514,6 +569,7 @@ func StartSSTable(gen int, conf *config.Config) (*SSTable, error) {
 		Index:          index,
 		Summary:        summary,
 		Gen:            gen,
+		Level:          level,
 		UseCompression: useCompression,
 		CompressionKey: dict,
 		Filter:         bf,
@@ -521,4 +577,33 @@ func StartSSTable(gen int, conf *config.Config) (*SSTable, error) {
 		Dir:            dir,
 	}
 	return sstable, nil
+}
+
+// TODO: Ispraviti ako je Dictionary globalan, a ne zaseban za SSTable
+// DeleteFiles briše sve fajlove vezane za odgovarajući SSTable
+func (s *SSTable) DeleteFiles(conf *config.Config) error {
+	elements := []struct {
+		element string
+		ext     string
+	}{
+		{"Data", ".db"},
+		{"Index", ".db"},
+		{"Summary", ".db"},
+		{"Filter", ".db"},
+		{"Metadata", ".db"},
+		{"Dictionary", ".db"},
+		{"TOC", ".txt"},
+	}
+	path := fmt.Sprintf("%s/%d/%d", conf.SSTable.SstableDirectory, s.Level, s.Gen)
+
+	for _, element := range elements {
+		filePath := CreateFileName(path, s.Gen, element.element, element.ext)
+		if FileExists(filePath) {
+			if err := os.Remove(filePath); err != nil {
+				return fmt.Errorf("failed to remove file %s: %w", filePath, err)
+			}
+		}
+	}
+
+	return nil
 }

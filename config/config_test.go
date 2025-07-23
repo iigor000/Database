@@ -39,8 +39,6 @@ func TestLoadConfigFile_LoadsValidConfig(t *testing.T) {
 		"lsmtree": {
 			"max_level": 3,
 			"compaction_algorithm": "leveled",
-			"use_size_based_compaction": true,
-			"max_level_size_mb": 50,
 			"base_sstable_limit": 2,
 			"level_size_multiplier": 10
 		}
@@ -93,8 +91,6 @@ func TestLoadConfigFile_InvalidBlockSize(t *testing.T) {
 		"lsmtree": {
 			"max_level": 3,
 			"compaction_algorithm": "leveled",
-			"use_size_based_compaction": true,
-			"max_level_size_mb": 50,
 			"base_sstable_limit": 2,
 			"level_size_multiplier": 10
 		}
@@ -107,37 +103,6 @@ func TestLoadConfigFile_InvalidBlockSize(t *testing.T) {
 	_, err = LoadConfigFile(tmpFile.Name())
 	if err == nil {
 		t.Fatalf("expected error for invalid block size, got nil")
-	}
-}
-
-func TestLoadConfigFile_InvalidMaxSSTablesPerLevelLength(t *testing.T) {
-	tmpFile, err := ioutil.TempFile("", "config-*.json")
-	if err != nil {
-		t.Fatalf("failed to create temp file: %v", err)
-	}
-	defer os.Remove(tmpFile.Name())
-
-	configJSON := `{
-        "lsmtree": {
-            "max_level": 3,
-            "compaction_algorithm": "size_tiered",
-            "use_size_based_compaction": false,
-            "max_sstables_per_level": [4, 8]
-        }
-    }`
-
-	if _, err := tmpFile.Write([]byte(configJSON)); err != nil {
-		t.Fatalf("failed to write config: %v", err)
-	}
-	tmpFile.Close()
-
-	_, err = LoadConfigFile(tmpFile.Name())
-	if err == nil {
-		t.Fatalf("expected error for invalid max_sstables_per_level length, got nil")
-	}
-	expectedMsg := "the length of the list of 'MaxSSTablesPerLevel' and the length of LSMTree - 'MaxLevel' must be the same"
-	if err.Error() != expectedMsg {
-		t.Errorf("expected error message %q, got %q", expectedMsg, err.Error())
 	}
 }
 

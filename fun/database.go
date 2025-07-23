@@ -5,7 +5,9 @@ import (
 	"time"
 
 	"github.com/iigor000/database/config"
+	// "github.com/iigor000/database/structures/adapter"
 	"github.com/iigor000/database/structures/cache"
+	// "github.com/iigor000/database/structures/lsmtree"
 	"github.com/iigor000/database/structures/memtable"
 	"github.com/iigor000/database/structures/sstable"
 	"github.com/iigor000/database/util"
@@ -65,6 +67,9 @@ func (db *Database) put(key string, value []byte) error {
 
 		sstable.FlushSSTable(db.config, *db.memtables.Memtables[db.memtables.NumberOfMemtables-1], db.memtables.GenToFlush)
 
+		// Proverava uslov za kompakciju i vrši kompakciju ako je potrebno (počinje proveru od prvog nivoa)
+		// lsmtree.Compact(db.config, 1)
+
 		recordsToCache := db.memtables.Memtables[db.memtables.NumberOfMemtables-1].GetAllEntries()
 
 		// Resetujemo redosled Memtable-a
@@ -77,8 +82,6 @@ func (db *Database) put(key string, value []byte) error {
 
 		//TODO: Povecati generaciju za flush
 		db.memtables.GenToFlush++
-
-		//TODO: Dodati LSM stablo
 
 		//TODO: Zapisati u wal da je flush uradjen
 
@@ -134,7 +137,21 @@ func (db *Database) get(key string) ([]byte, bool, error) {
 		return nil, false, nil
 	}
 
-	// TODO: Uzeti iz lsm stabla
+	// record, err := lsmtree.Get(db.config, keyByte)
+	// if err != nil {
+	// 	return nil, false, err
+	// } else {
+	// 	entry = &adapter.MemtableEntry{
+	// 		Key:       record.Key,
+	// 		Value:     record.Value,
+	// 		Timestamp: record.Timestamp,
+	// 		Tombstone: record.Tombstone,
+	// 	}
+
+	// 	if entry.Tombstone {
+	// 		return nil, false, nil // Ako je tombstone, ne vracamo vrednost
+	// 	}
+	// }
 
 	// Ako se nalazi u LSM stablu, stavljamo ga u cache
 	if entry != nil {

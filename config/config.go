@@ -56,13 +56,13 @@ type TokenBucketConfig struct {
 }
 
 type LSMTreeConfig struct {
-	MaxLevel               int    `json:"max_level"`                 // Maksimalni nivo LSM stabla
-	CompactionAlgorithm    string `json:"compaction_algorithm"`      // Algoritam za kompakciju (npr. "size_tiered", "leveled")
-	UseSizeBasedCompaction bool   `json:"use_size_based_compaction"` // Koristi size-based kompakciju (poredi po MB) ili ne (poredi po broju SSTable-ova)
-	BaseLevelSizeMBLimit   int    `json:"max_level_size_mb"`         // (koristi se AKO je UseSizeBasedCompaction true i algoritam za kompakciju "leveled") Maksimalna velicina nivoa u MB
-	BaseSSTableLimit       int    `json:"base_sstable_limit"`        // (koristi se AKO je UseSizeBasedCompaction false i algoritam za kompakciju "leveled") Granica za bazni SSTable u MB
-	LevelSizeMultiplier    int    `json:"level_size_multiplier"`     // (koristi se kod "leveled" kompakcije) Multiplikator velicine nivoa
-	MaxSSTablesPerLevel    []int  `json:"max_sstables_per_level"`    // (koristi se AKO je algoritam za kompakciju "size_tiered") Maksimalan broj SSTable-ova po nivou
+	MaxLevel            int    `json:"max_level"`            // Maksimalni nivo LSM stabla
+	CompactionAlgorithm string `json:"compaction_algorithm"` // Algoritam za kompakciju (npr. "leveled", "size_tiered")
+	// Leveled kompakcija - Svaki naredni može da bude N puta veći od prethodnog - granica BaseSSTableLimit * LevelSizeMultiplier^(Level)
+	LevelSizeMultiplier int `json:"level_size_multiplier"` // Multiplikator velicine nivoa
+	BaseSSTableLimit    int `json:"base_sstable_limit"`    // Bazni limit SSTable-a
+	// Size_Tiered kompakcija - Kada se na nivou dostigne granicu od N SSTable-ova, vrši se kompakcija
+	MaxTablesPerLevel int `json:"max_tables_per_level"` // Maksimalan broj SSTable-ova po nivou
 }
 
 type BTreeConfig struct {
@@ -99,15 +99,13 @@ func LoadConfigFile(path string) (*Config, error) {
 			Capacity: 100,
 		},
 		LSMTree: LSMTreeConfig{
-			MaxLevel:               5,
-			CompactionAlgorithm:    "size_tiered",
-			UseSizeBasedCompaction: true,
-			// "LEVELED" KOMPAKCIJA
-			BaseLevelSizeMBLimit: 100, // Maksimalna velicina nivoa u MB (koristi se AKO je UseSizeBasedCompaction true)
-			BaseSSTableLimit:     4,   // Granica za bazni SSTable u MB (koristi se AKO je UseSizeBasedCompaction false)
-			LevelSizeMultiplier:  10,  // Multiplikator velicine nivoa
-			// "SIZE-TIERED" KOMPAKCIJA
-			MaxSSTablesPerLevel: []int{4, 8, 16, 32, 64}, // Maksimalan broj SSTable-ova po nivou
+			MaxLevel:            5,
+			CompactionAlgorithm: "size_tiered",
+			// "leveled" KOMPAKCIJA
+			BaseSSTableLimit:    10000, // Bazni limit SSTable-a (BlockSize * 10000)
+			LevelSizeMultiplier: 10,    // Multiplikator velicine nivoa
+			// "size_tiered" KOMPAKCIJA
+			MaxTablesPerLevel: 8, // Maksimalan broj SSTable-ova po nivou
 		},
 		TokenBucket: TokenBucketConfig{
 			StartTokens:     5,
@@ -134,31 +132,6 @@ func LoadConfigFile(path string) (*Config, error) {
 	case "size_tiered", "leveled":
 	default:
 		return nil, errors.New("invalid compaction algorithm - it must be 'size_tiered' or 'leveled'")
-	}
-
-	if defaultConfig.LSMTree.CompactionAlgorithm == "leveled" {
-		if defaultConfig.LSMTree.UseSizeBasedCompaction {
-			if defaultConfig.LSMTree.BaseLevelSizeMBLimit <= 0 {
-				return nil, errors.New("invalid base level size MB limit - it must be greater than 0")
-			}
-			if defaultConfig.LSMTree.BaseSSTableLimit <= 0 {
-				return nil, errors.New("invalid base SSTable limit - it must be greater than 0")
-			}
-			if defaultConfig.LSMTree.LevelSizeMultiplier <= 0 {
-				return nil, errors.New("invalid level size multiplier - it must be greater than 0")
-			}
-		} else {
-			if len(defaultConfig.LSMTree.MaxSSTablesPerLevel) == 0 {
-				return nil, errors.New("max SSTables per level must be defined for size_tiered compaction")
-			}
-			for _, maxSSTables := range defaultConfig.LSMTree.MaxSSTablesPerLevel {
-				if maxSSTables <= 0 {
-					return nil, errors.New("invalid max SSTables per level - it must be greater than 0")
-				}
-			}
-		}
-	} else if len(defaultConfig.LSMTree.MaxSSTablesPerLevel) != defaultConfig.LSMTree.MaxLevel {
-		return nil, errors.New("the length of the list of 'MaxSSTablesPerLevel' and the length of LSMTree - 'MaxLevel' must be the same")
 	}
 
 	return defaultConfig, nil
