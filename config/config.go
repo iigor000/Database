@@ -18,6 +18,7 @@ type Config struct {
 	Cache       CacheConfig       `json:"cache"`        // Konfiguracija kes memorije
 	LSMTree     LSMTreeConfig     `json:"lsmtree"`      // Konfiguracija LSM stabla
 	TokenBucket TokenBucketConfig `json:"token_bucket"` // Konfiguracija token bucket-a
+	Compression CompressionConfig `json:"compression"`  // Konfiguracija kompresije
 }
 
 type BlockConfig struct {
@@ -69,6 +70,10 @@ type BTreeConfig struct {
 	MinSize int `json:"min_size"` // Minimalna velicina binarnog stabla
 }
 
+type CompressionConfig struct {
+	DictionaryDir string `json:"dictionary_dir"` // Direktorijum u kome se cuva recnik za kompresiju
+}
+
 func LoadConfigFile(path string) (*Config, error) {
 	defaultConfig := &Config{
 		Block: BlockConfig{
@@ -110,6 +115,9 @@ func LoadConfigFile(path string) (*Config, error) {
 		TokenBucket: TokenBucketConfig{
 			StartTokens:     5,
 			RefillIntervalS: 120, // Interval refilovanja tokena u sekundama
+		},
+		Compression: CompressionConfig{
+			DictionaryDir: "data/compression_dict",
 		},
 	}
 	file, err := os.Open(path)

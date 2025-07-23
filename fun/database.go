@@ -7,6 +7,8 @@ import (
 	"github.com/iigor000/database/config"
 	// "github.com/iigor000/database/structures/adapter"
 	"github.com/iigor000/database/structures/cache"
+	"github.com/iigor000/database/structures/compression"
+
 	// "github.com/iigor000/database/structures/lsmtree"
 	"github.com/iigor000/database/structures/memtable"
 	"github.com/iigor000/database/structures/sstable"
@@ -17,22 +19,27 @@ import (
 
 type Database struct {
 	//wal
-	memtables *memtable.Memtables
-	config    *config.Config
-	cache     *cache.Cache
-	username  string
+	compression *compression.Dictionary
+	memtables   *memtable.Memtables
+	config      *config.Config
+	cache       *cache.Cache
+	username    string
 }
 
 func NewDatabase(config *config.Config, username string) (*Database, error) {
 	memtables := memtable.NewMemtables(config)
 	// TODO: Treba da se ucita BloomFilter i Summary iz SSTable-a
 	cache := cache.NewCache(config)
-
+	dict, err := compression.Read(config.Compression.DictionaryDir)
+	if err != nil {
+		return nil, err
+	}
 	return &Database{
-		memtables: memtables,
-		config:    config,
-		cache:     cache,
-		username:  username,
+		memtables:   memtables,
+		config:      config,
+		cache:       cache,
+		username:    username,
+		compression: dict,
 	}, nil
 }
 
@@ -58,14 +65,16 @@ func (db *Database) put(key string, value []byte) error {
 
 	// TODO: Staviti write ahead log zapis
 
-	// TODO: Proveriti jel treba tu biti kompresija
-
+	if db.compression == nil {
+		db.compression = compression.NewDictionary()
+	}
+	db.compression.Add([]byte(key))
 	shouldFlush := db.memtables.Update([]byte(key), []byte(value), int64(time.Now().Unix()), false)
 
 	if shouldFlush {
 		// Flush Memtable na disk
 
-		sstable.FlushSSTable(db.config, *db.memtables.Memtables[db.memtables.NumberOfMemtables-1], db.memtables.GenToFlush)
+		sstable.FlushSSTable(db.config, *db.memtables.Memtables[db.memtables.NumberOfMemtables-1], db.memtables.GenToFlush, db.compression)
 
 		// Proverava uslov za kompakciju i vrši kompakciju ako je potrebno (počinje proveru od prvog nivoa)
 		// lsmtree.Compact(db.config, 1)
