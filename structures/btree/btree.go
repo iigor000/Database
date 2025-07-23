@@ -43,12 +43,10 @@ func (t *BTree) Search(k []byte) (*adapter.MemtableEntry, bool) {
 	return &entry, true
 }
 
+// Update azurira vrednost za kljuc k u B stablu
 func (t *BTree) Update(k, v []byte, timestamp int64, tombstone bool) {
 	println("Updating key:", string(k))
-	if t.root == nil {
-		return
-	}
-	_, exist := t.Search(k)
+
 	entry := memtable.MemtableEntry{
 		Key:       k,
 		Value:     v,
@@ -56,13 +54,24 @@ func (t *BTree) Update(k, v []byte, timestamp int64, tombstone bool) {
 		Tombstone: tombstone,
 	}
 	value := serializeEntry(entry)
+
+	if t.root == nil {
+		t.root = &Node{
+			keys:     [][]byte{k},
+			values:   [][]byte{value},
+			children: []*Node{},
+			leaf:     true,
+		}
+		return
+	}
+
+	_, exist := t.Search(k)
 	if exist {
 		t.update(k, value)
 	} else {
 		println("Inserting new key:", string(k))
 		t.Insert(k, value)
 	}
-
 }
 
 func (t *BTree) Delete(k []byte) {
@@ -70,14 +79,19 @@ func (t *BTree) Delete(k []byte) {
 	if t.root == nil {
 		return
 	}
-	entry, found := t.Search(k)
-	if !found {
-		return // kljuc ne postoji
+
+	// Prvo, ako kljuc postoji, postavi ga kao tombstone true
+	if entry, found := t.Search(k); found {
+		entry.Tombstone = true
+		value := serializeEntry(*entry)
+
+		// Azuriraj vrednost u stablu
+		// Ovo ce azurirati vrednost i postaviti tombstone na true
+		t.update(k, value)
 	}
-	entry.Tombstone = true // oznacavamo kao obrisano
-	value := serializeEntry(*entry)
-	t.Delete1(k) // uklanjamo kljuc iz stabla
-	t.Insert(k, value)
+
+	// Zatim, ukloni kljuc iz stabla
+	t.Delete1(k)
 }
 
 // Search pretrazuje B stablo za kljucem k i vraca odgovarajucu vrednost
@@ -521,10 +535,12 @@ func collectSortedKeys(x *Node) [][]byte {
 	return result
 }
 
+// Clear prazni B stablo
 func (t *BTree) Clear() {
 	t.root = nil
 }
 
+// serializeEntry serijalizuje MemtableEntry u []byte
 func serializeEntry(entry memtable.MemtableEntry) []byte {
 	buf := new(bytes.Buffer)
 	var keyLen int64 = int64(len(entry.Key))
@@ -538,6 +554,7 @@ func serializeEntry(entry memtable.MemtableEntry) []byte {
 	return buf.Bytes()
 }
 
+// deserializeEntry deserializuje []byte u MemtableEntry
 func deserializeEntry(data []byte) memtable.MemtableEntry {
 	buf := bytes.NewReader(data)
 	var keyLen int64

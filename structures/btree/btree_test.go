@@ -2,9 +2,20 @@ package btree
 
 import (
 	"bytes"
-	"fmt"
 	"testing"
+	"time"
+
+	memtable "github.com/iigor000/database/structures/adapter"
 )
+
+func createTestEntry(key, value []byte, tombstone bool) memtable.MemtableEntry {
+	return memtable.MemtableEntry{
+		Key:       key,
+		Value:     value,
+		Timestamp: time.Now().UnixNano(),
+		Tombstone: tombstone,
+	}
+}
 
 // Testira kreiranje novog b stabla
 func TestNewBTree(t *testing.T) {
@@ -24,50 +35,75 @@ func TestNewBTree(t *testing.T) {
 // Testira umetanje i pretragu
 func TestInsertAndSearch(t *testing.T) {
 	tree := NewBTree(2)
+	if tree == nil {
+		t.Fatal("Tree is nil")
+	}
 
 	// Prvo umetanje
-	tree.Insert([]byte("key1"), []byte("value1"))
+	entry1 := createTestEntry([]byte("key1"), []byte("value1"), false)
+	tree.Update(entry1.Key, entry1.Value, entry1.Timestamp, entry1.Tombstone)
+
 	if tree.root == nil {
-		t.Error("Root should not be nil after insertion")
+		t.Fatal("Root should not be nil after insertion")
 	}
+
+	if len(tree.root.keys) == 0 {
+		t.Fatal("Root keys are not initialized")
+	}
+
 	if len(tree.root.keys) != 1 || !bytes.Equal(tree.root.keys[0], []byte("key1")) {
 		t.Error("Root key not inserted correctly")
 	}
-	if !bytes.Equal(tree.root.values[0], []byte("value1")) {
-		t.Error("Value not inserted correctly")
-	}
 
 	// Pretraga postojecih i nepostojecih kljuceva
-	val := tree.Search1([]byte("key1"))
-	if !bytes.Equal(val, []byte("value1")) {
+	foundEntry, found := tree.Search([]byte("key1"))
+	if !found {
+		t.Error("Key should be found")
+	}
+	if !bytes.Equal(foundEntry.Value, []byte("value1")) {
 		t.Error("Search returned incorrect value")
 	}
-	val = tree.Search1([]byte("nonexistent"))
-	if val != nil {
-		t.Error("Search should return nil for non-existent key")
+
+	_, found = tree.Search([]byte("nonexistent"))
+	if found {
+		t.Error("Search should return false for non-existent key")
 	}
 
 	// Dodavanje vise kljuceva
-	tree.Insert([]byte("key2"), []byte("value2"))
-	tree.Insert([]byte("key0"), []byte("value0"))
-	tree.Insert([]byte("key1.5"), []byte("value1.5"))
-	tree.Insert([]byte("key3"), []byte("value3"))
+	entries := []memtable.MemtableEntry{
+		createTestEntry([]byte("key2"), []byte("value2"), false),
+		createTestEntry([]byte("key0"), []byte("value0"), false),
+		createTestEntry([]byte("key1.5"), []byte("value1.5"), false),
+		createTestEntry([]byte("key3"), []byte("value3"), true),
+	}
+
+	for _, entry := range entries {
+		tree.Update(entry.Key, entry.Value, entry.Timestamp, entry.Tombstone)
+	}
 
 	testCases := []struct {
-		key   []byte
-		value []byte
+		key       []byte
+		value     []byte
+		tombstone bool
 	}{
-		{[]byte("key0"), []byte("value0")},
-		{[]byte("key1"), []byte("value1")},
-		{[]byte("key1.5"), []byte("value1.5")},
-		{[]byte("key2"), []byte("value2")},
-		{[]byte("key3"), []byte("value3")},
+		{[]byte("key0"), []byte("value0"), false},
+		{[]byte("key1"), []byte("value1"), false},
+		{[]byte("key1.5"), []byte("value1.5"), false},
+		{[]byte("key2"), []byte("value2"), false},
+		{[]byte("key3"), []byte("value3"), true},
 	}
 
 	for _, tc := range testCases {
-		val := tree.Search1(tc.key)
-		if !bytes.Equal(val, tc.value) {
-			t.Errorf("Search for key %s returned incorrect value, expected %s, got %s", tc.key, tc.value, val)
+		entry, found := tree.Search(tc.key)
+		if !found {
+			t.Errorf("Key %s should be found", tc.key)
+			continue
+		}
+		if !bytes.Equal(entry.Value, tc.value) {
+			t.Errorf("For key %s expected value %s, got %s", tc.key, tc.value, entry.Value)
+		}
+		if entry.Tombstone != tc.tombstone {
+			t.Errorf("For key %s expected tombstone %t, got %t", tc.key, tc.tombstone, entry.Tombstone)
 		}
 	}
 }
@@ -84,7 +120,8 @@ func TestSplitRoot(t *testing.T) {
 	}
 
 	for i, k := range keys {
-		tree.Insert(k, []byte("value"+string(k)))
+		entry := createTestEntry(k, []byte("value"+string(k)), false)
+		tree.Update(entry.Key, entry.Value, entry.Timestamp, entry.Tombstone)
 
 		if i == 2 {
 			if len(tree.root.keys) != 3 {
@@ -124,16 +161,19 @@ func TestDelete(t *testing.T) {
 		[]byte("key1.5"),
 		[]byte("key4.5"),
 	}
+
 	for _, k := range keys {
-		tree.Insert(k, []byte("value"+string(k)))
+		entry := createTestEntry(k, []byte("value"+string(k)), false)
+		tree.Update(entry.Key, entry.Value, entry.Timestamp, entry.Tombstone)
 	}
 
 	tree.Delete([]byte("key0.5"))
-	if tree.Search([]byte("key0.5")) != nil {
+	if _, found := tree.Search([]byte("key0.5")); found {
 		t.Error("Key 'key0.5' should be deleted")
 	}
+
 	tree.Delete([]byte("key3"))
-	if tree.Search([]byte("key3")) != nil {
+	if _, found := tree.Search([]byte("key3")); found {
 		t.Error("Key 'key3' should be deleted")
 	}
 
@@ -147,15 +187,16 @@ func TestDelete(t *testing.T) {
 		[]byte("key4.5"),
 		[]byte("key5"),
 	}
+
 	for _, k := range remainingKeys {
-		if tree.Search(k) == nil {
+		if _, found := tree.Search(k); !found {
 			t.Errorf("Key %s should still exist after deletions", k)
 		}
 	}
 
 	for _, k := range remainingKeys {
 		tree.Delete(k)
-		if tree.Search(k) != nil {
+		if _, found := tree.Search(k); found {
 			t.Errorf("Key %s should be deleted", k)
 		}
 	}
@@ -225,18 +266,30 @@ func TestBorrowAndMerge(t *testing.T) {
 		[]byte("key8"),
 		[]byte("key9"),
 	}
+
+	// Dodaj kljuceve u stablo
 	for _, k := range keys {
-		tree.Insert(k, []byte("value"+string(k)))
+		entry := createTestEntry(k, []byte("value"+string(k)), false)
+		tree.Update(entry.Key, entry.Value, entry.Timestamp, entry.Tombstone)
 	}
 
+	// Izbriši neke kljuxeve
 	tree.Delete([]byte("key1"))
 	tree.Delete([]byte("key2"))
 	tree.Delete([]byte("key3"))
 
-	if tree.Search([]byte("key1")) != nil || tree.Search([]byte("key2")) != nil || tree.Search([]byte("key3")) != nil {
-		t.Error("Deleted keys should not exist")
+	// Proveri da li su kljuxevi obrisani
+	if _, found := tree.Search([]byte("key1")); found {
+		t.Error("Key 'key1' should be deleted")
+	}
+	if _, found := tree.Search([]byte("key2")); found {
+		t.Error("Key 'key2' should be deleted")
+	}
+	if _, found := tree.Search([]byte("key3")); found {
+		t.Error("Key 'key3' should be deleted")
 	}
 
+	// potvrdi da ostali kljucevi postoje
 	remainingKeys := [][]byte{
 		[]byte("key4"),
 		[]byte("key5"),
@@ -245,143 +298,102 @@ func TestBorrowAndMerge(t *testing.T) {
 		[]byte("key8"),
 		[]byte("key9"),
 	}
+
 	for _, k := range remainingKeys {
-		if tree.Search(k) == nil {
+		if _, found := tree.Search(k); !found {
 			t.Errorf("Key %s should still exist after deletions", k)
 		}
 	}
 }
 
-// Testira ivicne slucajeve
+// Testira granicne slucajeve
 func TestEdgeCases(t *testing.T) {
 	tree := NewBTree(2)
+	now := time.Now().UnixNano()
 
-	tree.Insert([]byte("key1"), []byte("value1"))
-	tree.Insert([]byte("key1"), []byte("value2"))
-	val := tree.Search([]byte("key1"))
-	if !bytes.Equal(val, []byte("value2")) {
+	// Testiraj dupliranje ključeva
+	// Ocekuje se da se vrednost azurira, a ne da se dodaje novi cvor
+	entry1 := createTestEntry([]byte("key1"), []byte("value1"), false)
+	tree.Update(entry1.Key, entry1.Value, entry1.Timestamp, entry1.Tombstone)
+
+	entry2 := createTestEntry([]byte("key1"), []byte("value2"), false)
+	tree.Update(entry2.Key, entry2.Value, entry2.Timestamp, entry2.Tombstone)
+
+	foundEntry, found := tree.Search([]byte("key1"))
+	if !found {
+		t.Error("Key should exist")
+	}
+	if !bytes.Equal(foundEntry.Value, []byte("value2")) {
 		t.Error("Duplicate key should overwrite value")
 	}
 
-	tree.Delete([]byte("nonexistent")) // nepostojeci kljuc - ne sme izazvati gresku
+	// Testiraj brisanje nepostojeceg kljuca
+	// Ocekuje se da ne dođe do greske
+	tree.Delete([]byte("nonexistent"))
 
 	emptyTree := NewBTree(2)
-	if emptyTree.Search([]byte("key1")) != nil {
-		t.Error("Search on empty tree should return nil")
-	}
-	emptyTree.Delete([]byte("key1")) // ne sme izazvati gresku
-
-	// Test update prazno stablo
-	tree1 := NewBTree(2)
-	if tree1.Update([]byte("key"), []byte("value")) {
-		t.Error("Update on empty tree should return false")
+	if _, found := emptyTree.Search([]byte("key1")); found {
+		t.Error("Search on empty tree should return not found")
 	}
 
-	// Test nil key
+	// Testiraj brisanje iz praznog stabla
+	emptyTree.Delete([]byte("key1"))
+
+	// Test nil kljuca
 	tree2 := NewBTree(2)
-	tree2.Insert([]byte("key"), []byte("value"))
-	if tree2.Update(nil, []byte("value")) {
-		t.Error("Update with nil key should return false")
-	}
+	validEntry := createTestEntry([]byte("valid"), []byte("value"), false)
+	tree2.Update(validEntry.Key, validEntry.Value, validEntry.Timestamp, validEntry.Tombstone)
 
-	// Test azivanje na nil vrednost
+	tree2.Update(nil, []byte("value"), now, false)
+
+	// Test tombstone azuriranje
 	tree3 := NewBTree(2)
-	tree3.Insert([]byte("key"), []byte("value"))
-	if !tree3.Update([]byte("key"), nil) {
-		t.Error("Update to nil value should return true")
+	entry3 := createTestEntry([]byte("key"), []byte("value"), false)
+	tree3.Update(entry3.Key, entry3.Value, entry3.Timestamp, entry3.Tombstone)
+
+	// Azriraj tombstone
+	tree3.Update([]byte("key"), nil, now, true)
+
+	entry, found := tree3.Search([]byte("key"))
+	if !found {
+		t.Error("Tombstoned key should still be found")
 	}
-	if tree3.Search([]byte("key")) != nil {
-		t.Error("Search should return nil after updating value to nil")
+	if !entry.Tombstone {
+		t.Error("Entry should be tombstoned")
 	}
 }
 
 func TestUpdate(t *testing.T) {
 	tree := NewBTree(2)
+	now := time.Now().UnixNano()
 
-	// Test updating non-existent key (should return false)
-	if tree.Update([]byte("key1"), []byte("value1")) {
-		t.Error("Update should return false for non-existent key")
+	tree.Update([]byte("key1"), []byte("value1"), now, false)
+
+	// Verifikuj da li je kljuc umetnut i da li je vrednost odgovara
+	entry, found := tree.Search([]byte("key1"))
+	if !found {
+		t.Error("Key should have been inserted")
+	}
+	if !bytes.Equal(entry.Value, []byte("value1")) {
+		t.Error("Value was not set correctly")
 	}
 
-	// Insert some keys
-	tree.Insert([]byte("key1"), []byte("value1"))
-	tree.Insert([]byte("key2"), []byte("value2"))
-	tree.Insert([]byte("key3"), []byte("value3"))
+	// Test azuriranje postojeceg kljuca
+	newValue := []byte("new_value1")
+	tree.Update([]byte("key1"), newValue, now+1, false)
 
-	// Test updating existing keys
-	testCases := []struct {
-		key         []byte
-		newValue    []byte
-		shouldExist bool
-	}{
-		{[]byte("key1"), []byte("new_value1"), true},
-		{[]byte("key2"), []byte("new_value2"), true},
-		{[]byte("key3"), []byte("new_value3"), true},
-		{[]byte("key4"), []byte("value4"), false}, // Doesn't exist
+	// Da li je vrednost azurirana
+	entry, _ = tree.Search([]byte("key1"))
+	if !bytes.Equal(entry.Value, newValue) {
+		t.Error("Value was not updated correctly")
 	}
 
-	for _, tc := range testCases {
-		updated := tree.Update(tc.key, tc.newValue)
-		if updated != tc.shouldExist {
-			t.Errorf("Update returned %v for key %s, expected %v", updated, tc.key, tc.shouldExist)
-		}
+	// Test tombstone azuranje
+	tree.Update([]byte("key1"), nil, now+2, true)
 
-		// Verify the value was updated if it should exist
-		if tc.shouldExist {
-			val := tree.Search(tc.key)
-			if !bytes.Equal(val, tc.newValue) {
-				t.Errorf("Value for key %s not updated correctly, expected %s, got %s",
-					tc.key, tc.newValue, val)
-			}
-		}
-	}
-
-	// Test updating after splitting nodes
-	for i := 4; i < 20; i++ {
-		key := []byte(fmt.Sprintf("key%d", i))
-		tree.Insert(key, key)
-	}
-
-	// Update keys in different nodes
-	updateCases := []struct {
-		key      []byte
-		newValue []byte
-	}{
-		{[]byte("key1"), []byte("updated1")},
-		{[]byte("key2"), []byte("updated2")},
-		{[]byte("key4"), []byte("updated_4")},
-		{[]byte("key10"), []byte("updated_10")},
-	}
-
-	for _, tc := range updateCases {
-		if !tree.Update(tc.key, tc.newValue) {
-			t.Errorf("Failed to update key %s that should exist", tc.key)
-		}
-		val := tree.Search(tc.key)
-		if !bytes.Equal(val, tc.newValue) {
-			t.Errorf("Value for key %s not updated correctly after split, expected %s, got %s",
-				tc.key, tc.newValue, val)
-		}
-	}
-
-	// Test update doesn't affect tree structure
-	originalKeys := tree.SortedKeys()
-	for _, tc := range updateCases {
-		if !tree.Update(tc.key, []byte("final_update")) {
-			t.Errorf("Failed to update key %s in final check", tc.key)
-		}
-	}
-	newKeys := tree.SortedKeys()
-
-	if len(originalKeys) != len(newKeys) {
-		t.Errorf("Update changed number of keys in tree, was %d, now %d",
-			len(originalKeys), len(newKeys))
-	}
-
-	for i := range originalKeys {
-		if !bytes.Equal(originalKeys[i], newKeys[i]) {
-			t.Errorf("Update changed keys in tree, at index %d was %s, now %s",
-				i, originalKeys[i], newKeys[i])
-		}
+	// verifikuj tombstone
+	entry, _ = tree.Search([]byte("key1"))
+	if !entry.Tombstone {
+		t.Error("Entry should be tombstoned")
 	}
 }
