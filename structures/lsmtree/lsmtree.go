@@ -351,7 +351,6 @@ func buildSSTableFromRecords(mergedRecords []*sstable.DataRecord, conf *config.C
 		}
 		sr := sstable.SummaryRecord{
 			FirstKey:        ib.Records[i].Key,
-			LastKey:         ib.Records[end-1].Key,
 			IndexOffset:     ib.Records[i].IndexOffset,
 			NumberOfRecords: end - i,
 		}

@@ -16,6 +16,9 @@ func TestMemtableCRUD(t *testing.T) {
 		Skiplist: config.SkiplistConfig{
 			MaxHeight: 3,
 		},
+		BTree: config.BTreeConfig{
+			MinSize: 16,
+		},
 	}, 5)
 	// Test initial state
 	if len(m.Keys) != 0 {

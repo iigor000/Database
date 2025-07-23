@@ -5,6 +5,7 @@ import (
 
 	"github.com/iigor000/database/config"
 	"github.com/iigor000/database/structures/block_organization"
+	"github.com/iigor000/database/structures/compression"
 	"github.com/iigor000/database/structures/memtable"
 )
 
@@ -39,8 +40,15 @@ func TestSSTable(t *testing.T) {
 	memtable.Update([]byte("key5"), []byte("value5"), 5, false)
 	println("Memtable entries:")
 	memtable.Print()
+	dict := compression.NewDictionary()
+	dict.Add([]byte("key1"))
+	dict.Add([]byte("key2"))
+	dict.Add([]byte("key3"))
+	dict.Add([]byte("key4"))
+	dict.Add([]byte("key5"))
+
 	// Flush the memtable to create an SSTable
-	sstable := FlushSSTable(conf, *memtable, 1)
+	sstable := FlushSSTable(conf, *memtable, 1, dict)
 	// Check if the SSTable has the expected number of records
 	if len(sstable.Data.Records) != 5 {
 		t.Errorf("Expected 5 records in SSTable, got %d", len(sstable.Data.Records))
@@ -68,7 +76,7 @@ func TestSSTableRead(t *testing.T) {
 	conf := &config.Config{
 		SSTable: config.SSTableConfig{
 			SstableDirectory: "./sstable_test",
-			UseCompression:   false,
+			UseCompression:   true,
 			SummaryLevel:     2,
 		},
 		Memtable: config.MemtableConfig{
@@ -94,7 +102,14 @@ func TestSSTableRead(t *testing.T) {
 	memtable.Update([]byte("key5"), []byte("value5"), 5, false)
 	println("Memtable entries:")
 	memtable.Print()
-	sstable := FlushSSTable(conf, *memtable, 1)
+	dict := compression.NewDictionary()
+	dict.Add([]byte("key5"))
+	dict.Add([]byte("key1"))
+	dict.Add([]byte("key2"))
+	dict.Add([]byte("key3"))
+	dict.Add([]byte("key4"))
+
+	sstable := FlushSSTable(conf, *memtable, 1, dict)
 	if sstable == nil {
 		t.Fatal("Failed to create SSTable")
 	}
@@ -117,7 +132,7 @@ func TestSSTableRead(t *testing.T) {
 	}
 	println("Testing SSTable read...")
 	// Read the SSTable from disk
-	readSSTable := NewSSTable(conf, sstable.Level, sstable.Gen)
+	readSSTable := NewSSTable(conf, sstable.Level, sstable.Gen, dict)
 	if readSSTable == nil {
 		t.Fatal("ReadSSTable returned nil")
 	}
@@ -138,6 +153,8 @@ func TestSSTableRead(t *testing.T) {
 		println("FirstKey:", string(record.FirstKey), "IndexOffset:", record.IndexOffset, "NumberOfRecords:", record.NumberOfRecords)
 	}
 
+	dict.Write("./sstable_test/dict_test.db")
+
 }
 
 // TestSSTableIterate tests the iteration functionality of the SSTable
@@ -145,7 +162,7 @@ func TestSSTableIterate(t *testing.T) {
 	conf := &config.Config{
 		SSTable: config.SSTableConfig{
 			SstableDirectory: "./sstable_test",
-			UseCompression:   false,
+			UseCompression:   true,
 			SummaryLevel:     2,
 		},
 		Memtable: config.MemtableConfig{
@@ -160,7 +177,11 @@ func TestSSTableIterate(t *testing.T) {
 			BlockSize: 4096,
 		},
 	}
-	sstable, err := StartSSTable(1, 1, conf)
+	dict, err := compression.Read("./sstable_test/dict_test.db")
+	if err != nil {
+		t.Fatalf("Failed to read dictionary: %v", err)
+	}
+	sstable, err := StartSSTable(1, 1, conf, dict)
 	if err != nil {
 		t.Fatalf("Failed to start SSTable: %v", err)
 	}
@@ -232,7 +253,12 @@ func TestSSTableScan(t *testing.T) {
 			BlockSize: 4096,
 		},
 	}
-	sstable, err := StartSSTable(1, 1, conf)
+
+	dict, err := compression.Read("./sstable_test/dict_test.db")
+	if err != nil {
+		t.Fatalf("Failed to read dictionary: %v", err)
+	}
+	sstable, err := StartSSTable(1, 1, conf, dict)
 	if err != nil {
 		t.Fatalf("Failed to start SSTable: %v", err)
 	}

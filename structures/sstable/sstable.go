@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"sort"
+	"strings"
 
 	"github.com/iigor000/database/config"
 	"github.com/iigor000/database/structures/adapter"
@@ -32,9 +33,15 @@ type SSTable struct {
 }
 
 // NewSSTable kreira novi SSTable
-func FlushSSTable(conf *config.Config, memtable memtable.Memtable, generation int) *SSTable {
+func FlushSSTable(conf *config.Config, memtable memtable.Memtable, generation int, dict *compression.Dictionary) *SSTable {
+	//Sortiramo memtable.Keys da bismo imali uredjen redosled
+	sort.Slice(memtable.Keys, func(i, j int) bool {
+		return bytes.Compare(memtable.Keys[i], memtable.Keys[j]) < 0
+	})
+
 	var sstable SSTable
 	sstable.UseCompression = conf.SSTable.UseCompression
+	sstable.CompressionKey = dict
 	sstable.Level = 1 // Postavljamo nivo na 1, jer se Memtable flushuje kao SSTable na prvi nivo
 	sstable.Gen = generation
 	path := fmt.Sprintf("%s/%d/%d", conf.SSTable.SstableDirectory, sstable.Level, sstable.Gen)
@@ -43,14 +50,15 @@ func FlushSSTable(conf *config.Config, memtable memtable.Memtable, generation in
 		panic("Error creating directory for SSTable: " + err.Error())
 	}
 	sstable.SingleFile = conf.SSTable.SingleFile
-	sstable.Data, sstable.CompressionKey = buildData(memtable, conf, generation, path, sstable.SingleFile)
+	sstable.Data = buildData(memtable, conf, generation, path, sstable.SingleFile, dict)
 	sstable.Index = buildIndex(conf, generation, path, sstable.Data, sstable.SingleFile)
 	sstable.Summary = buildSummary(conf, sstable.Index, generation, path, sstable.SingleFile)
 	sstable.Filter = buildBloomFilter(conf, generation, path, sstable.Data, sstable.SingleFile)
 	sstable.Metadata = buildMetadata(generation, path, sstable.Data, sstable.SingleFile)
 	if !sstable.SingleFile {
-		dictPath := CreateFileName(path, generation, "Dictionary", "db")
-		sstable.CompressionKey.Write(dictPath)
+		dictPath := CreateFileName(path, generation, "Dictionary", "txt")
+		// Upisujemo true ili false u fajl da li koristimo kompresiju
+		sstable.WriteCompressionInfo(dictPath, dict)
 		// Upis TOC u fajl
 		toc_path := CreateFileName(path, generation, "TOC", "txt")
 		toc_data := fmt.Sprintf("Generation: %d\nData: %s\nIndex: %s\nSummary: %s\nFilter: %s\nMetadata: %s\n",
@@ -128,17 +136,52 @@ func FlushSSTable(conf *config.Config, memtable memtable.Memtable, generation in
 	return &sstable
 }
 
-func buildData(mem memtable.Memtable, conf *config.Config, gen int, path string, singleFile bool) (*Data, *compression.Dictionary) {
+func (s *SSTable) WriteCompressionInfo(path string, dict *compression.Dictionary) {
+	file, err := os.Create(path) // Create ili OpenFile sa O_CREATE|O_WRONLY|O_TRUNC
+	if err != nil {
+		panic("Error creating compression info file: " + err.Error())
+	}
+	defer file.Close()
+
+	if s.UseCompression && dict != nil && !dict.IsEmpty() {
+		file.WriteString("true")
+	} else {
+		file.WriteString("false")
+	}
+}
+
+func ReadCompressionInfo(path string) (bool, error) {
+	// Proveri da li fajl postoji
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return false, nil // Fajl ne postoji, vraćamo false
+	}
+
+	file, err := os.Open(path)
+	if err != nil {
+		return false, err
+	}
+	defer file.Close()
+
+	// Čitaj sadržaj fajla
+	content, err := io.ReadAll(file)
+	if err != nil {
+		return false, err
+	}
+
+	// Parsiraj string u bool
+	contentStr := strings.TrimSpace(string(content))
+	useCompression := contentStr == "true"
+
+	return useCompression, nil
+}
+
+func buildData(mem memtable.Memtable, conf *config.Config, gen int, path string, singleFile bool, dict *compression.Dictionary) *Data {
 	db := &Data{}
-	dict := compression.NewDictionary()
 	for i := 0; i < mem.Capacity; i++ {
 		entry, found := mem.Structure.Search(mem.Keys[i])
 		if found {
 			dr := NewDataRecord(entry.Key, entry.Value, entry.Timestamp, entry.Tombstone)
 			db.Records = append(db.Records, dr)
-			if conf.SSTable.UseCompression {
-				dict.Add(entry.Key)
-			}
 		}
 	}
 	if !singleFile {
@@ -149,7 +192,7 @@ func buildData(mem memtable.Memtable, conf *config.Config, gen int, path string,
 			db.WriteData(filename, conf, nil)
 		}
 	}
-	return db, dict
+	return db
 }
 
 func buildIndex(conf *config.Config, gen int, path string, db *Data, singleFile bool) *Index {
@@ -266,9 +309,9 @@ func ReadSingleFileSSTable(sstable *SSTable, dir string, gen int, conf *config.C
 }
 
 // NewSSTable kreira novi SSTable iz fajlova
-func NewSSTable(conf *config.Config, level int, gen int) *SSTable {
+func NewSSTable(conf *config.Config, level int, gen int, dict *compression.Dictionary) *SSTable {
 	sstable := &SSTable{
-		CompressionKey: compression.NewDictionary(),
+		CompressionKey: dict,
 		Gen:            gen,
 		Level:          level,
 	}
@@ -281,24 +324,15 @@ func NewSSTable(conf *config.Config, level int, gen int) *SSTable {
 	}
 
 	// Citanje kompresije iz fajla
-	dictPath := CreateFileName(dir, gen, "Dictionary", "db")
-	dict, err := compression.Read(dictPath)
+	dictPath := CreateFileName(dir, gen, "Dictionary", "txt")
+	useCompression, err := ReadCompressionInfo(dictPath)
 	if err != nil {
-		panic("Error reading dictionary from file: " + err.Error())
+		panic("Error reading compression info from file: " + err.Error())
 	}
 	println("Dictionary read from file:", dictPath)
-	sstable.UseCompression = true
+	sstable.UseCompression = useCompression
 	sstable.CompressionKey = dict
-	if dict != nil {
-		if dict.IsEmpty() {
-			sstable.UseCompression = false
-			sstable.CompressionKey = nil
-
-		} else {
-			//dict.Print()
-		}
-	} else {
-		sstable.UseCompression = false
+	if !useCompression {
 		sstable.CompressionKey = nil
 	}
 
@@ -437,7 +471,7 @@ func (s *SSTable) Get(conf *config.Config, key []byte) (*DataRecord, error) {
 
 	// Ako Bloom filter sadrži ključ, proveri u summary i index
 	for _, summary := range s.Summary.Records {
-		if bytes.Compare(key, summary.FirstKey) < 0 || bytes.Compare(key, summary.LastKey) > 0 {
+		if bytes.Compare(key, summary.FirstKey) < 0 {
 			continue // Ključ nije u ovom summary bloku
 		}
 
@@ -510,7 +544,7 @@ func (s *SSTable) ReadRecordWithKey(bm *block_organization.BlockManager, blockNu
 	}, nextBlock
 }
 
-func StartSSTable(level int, gen int, conf *config.Config) (*SSTable, error) {
+func StartSSTable(level int, gen int, conf *config.Config, dict *compression.Dictionary) (*SSTable, error) {
 	// Ucitavamo bloom filter i summary iz fajla
 	if gen < 1 {
 		return nil, fmt.Errorf("invalid generation number: %d", gen)
@@ -528,23 +562,14 @@ func StartSSTable(level int, gen int, conf *config.Config) (*SSTable, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error reading summary: %w", err)
 	}
-	// Ucitavamo compression
-	compressionPath := CreateFileName(dir, gen, "Dictionary", "db")
-	dict, err := compression.Read(compressionPath)
+	dictpath := CreateFileName(dir, gen, "Dictionary", "txt")
+	UseCompression, err := ReadCompressionInfo(dictpath)
 	if err != nil {
 		return nil, fmt.Errorf("error reading compression dictionary: %w", err)
 	}
-	useCompression := true
-	if dict != nil {
-		if dict.IsEmpty() {
-			useCompression = false
-			dict = nil
-		} else {
-			dict.Print()
-		}
-	} else {
-		useCompression = false
-		dict = nil
+	dictionary := dict
+	if !UseCompression {
+		dictionary = nil // Ako ne koristimo kompresiju, dictionary je nil
 	}
 
 	data := &Data{
@@ -570,8 +595,8 @@ func StartSSTable(level int, gen int, conf *config.Config) (*SSTable, error) {
 		Summary:        summary,
 		Gen:            gen,
 		Level:          level,
-		UseCompression: useCompression,
-		CompressionKey: dict,
+		UseCompression: UseCompression,
+		CompressionKey: dictionary,
 		Filter:         bf,
 		Metadata:       &merkle.MerkleTree{},
 		Dir:            dir,
