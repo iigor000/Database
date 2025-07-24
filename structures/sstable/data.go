@@ -149,7 +149,7 @@ func ReadData(path string, conf *config.Config, dict *compression.Dictionary, st
 	bm := block_organization.NewBlockManager(conf)
 	block_num := int(startOffset / int64(conf.Block.BlockSize)) // Pocinjemo od bloka koji sadrzi startOffset
 	end_block := int(endOffset / int64(conf.Block.BlockSize))   // Kraj bloka koji sadrzi endOffset
-	println("Start block:", block_num, "End block:", end_block)
+
 	if endOffset <= startOffset {
 		end_block = -1 // Kraj bloka koji sadrzi endOffset
 	}

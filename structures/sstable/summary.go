@@ -39,13 +39,13 @@ func (sb *Summary) WriteSummary(path string, conf *config.Config) error {
 	sb.SummaryFile.Offset = int64(bn * conf.Block.BlockSize)
 
 	for _, record := range sb.Records {
-		err := record.WriteSummaryRecord(path, bm)
+		bn, err := record.WriteSummaryRecord(path, bm)
 		if err != nil {
 			return err
 		}
+
 		sb.SummaryFile.SizeOnDisk = int64(bn * conf.Block.BlockSize)
 	}
-	println("Summary size on disk:", sb.SummaryFile.SizeOnDisk)
 	serializedData, _ := sb.Records[len(sb.Records)-1].Serialize()
 	for i := 1; i < 10001; i++ {
 		if len(serializedData) < i*conf.Block.BlockSize {
@@ -53,16 +53,17 @@ func (sb *Summary) WriteSummary(path string, conf *config.Config) error {
 			break
 		}
 	}
+	sb.SummaryFile.SizeOnDisk -= sb.SummaryFile.Offset
 	return nil
 }
 
-func (sr *SummaryRecord) WriteSummaryRecord(path string, bm *block_organization.BlockManager) error {
+func (sr *SummaryRecord) WriteSummaryRecord(path string, bm *block_organization.BlockManager) (int, error) {
 	serializedData, _ := sr.Serialize()
-	_, err := bm.AppendBlock(path, serializedData)
+	bn, err := bm.AppendBlock(path, serializedData)
 	if err != nil {
-		return err
+		return -1, err
 	}
-	return nil
+	return bn, nil
 }
 
 func (sr *SummaryRecord) Serialize() ([]byte, error) {
@@ -100,7 +101,6 @@ func ReadSummary(path string, conf *config.Config, startOffset, endOffset int64)
 	if endOffset <= startOffset {
 		end_block = -1 // Kraj bloka koji sadrzi endOffset
 	}
-	println(end_block)
 	summary := &Summary{}
 	data, err := bm.ReadBlock(path, block_num)
 	if err != nil {
@@ -120,6 +120,7 @@ func ReadSummary(path string, conf *config.Config, startOffset, endOffset int64)
 		}
 	}
 	for {
+		println("Reading block number:", block_num)
 		block, err := bm.ReadBlock(path, block_num)
 		if err != nil {
 			if err.Error() == "EOF" {
@@ -138,7 +139,6 @@ func ReadSummary(path string, conf *config.Config, startOffset, endOffset int64)
 				break
 			}
 		}
-		println("Reading block number:", block_num1)
 		if end_block != -1 && block_num1 > end_block {
 			break // Dostigli smo kraj bloka koji nas zanima
 		}

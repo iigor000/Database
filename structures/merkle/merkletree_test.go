@@ -66,7 +66,7 @@ func TestSerializeToBinaryFile(t *testing.T) {
 	if tree == nil {
 		t.Fatal("Merkle Tree is nil")
 	}
-	err := tree.SerializeToBinaryFile("merklee.bin")
+	_, err := tree.SerializeToBinaryFile("merklee.bin", 0)
 	if err != nil {
 		t.Fatal("Error serializing to binary file")
 	}
@@ -81,11 +81,11 @@ func TestDeserializeFromBinaryFile(t *testing.T) {
 	if tree == nil {
 		t.Fatal("Merkle Tree is nil")
 	}
-	err := tree.SerializeToBinaryFile("merklee.bin")
+	_, err := tree.SerializeToBinaryFile("merklee.bin", 0)
 	if err != nil {
 		t.Fatal("Error serializing to binary file")
 	}
-	deserializedTree, err := DeserializeFromBinaryFile("merklee.bin")
+	deserializedTree, err := DeserializeFromBinaryFile("merklee.bin", 0)
 	if err != nil {
 		t.Fatal("Error deserializing from binary file")
 	}

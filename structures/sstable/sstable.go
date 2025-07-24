@@ -104,21 +104,30 @@ func (sstable *SSTable) WriteSingleFile(path string, conf *config.Config) error 
 		return fmt.Errorf("error writing filter to file: %w", err)
 	}
 	metadataOffset := filterOffset + int64(len(serializedFilter))
-	serializedMetadata := sstable.Metadata.Serialize()
-	_, err = file.Write(serializedMetadata) // Upisujemo podatke na kraj fajla
+	metadataSize, err := sstable.Metadata.SerializeToBinaryFile(path, metadataOffset)
 	if err != nil {
-		return nil
+		return fmt.Errorf("error serializing metadata: %w", err)
 	}
-	compressionOffset := metadataOffset + int64(len(serializedMetadata))
-	var compressionByte byte
+	compressionOffset := metadataOffset + int64(metadataSize)
+	_, err = file.Seek(compressionOffset, io.SeekStart)
+	if err != nil {
+		return fmt.Errorf("error seeking to compression offset: %w", err)
+	}
+	var compressionByte [1]byte
 	if sstable.UseCompression {
-		compressionByte = 1
+		compressionByte[0] = 1
 	} else {
-		compressionByte = 0
+		compressionByte[0] = 0
 	}
-	_, err = file.Write([]byte{compressionByte})
+	_, err = file.Write(compressionByte[:])
 	if err != nil {
 		return fmt.Errorf("error writing compression info: %w", err)
+	}
+
+	tocOffset := compressionOffset + 1 // Offset za TOC
+	_, err = file.Seek(tocOffset, io.SeekStart)
+	if err != nil {
+		return fmt.Errorf("error seeking to TOC offset: %w", err)
 	}
 	// Upisujemo TOC u fajl
 	offsets := make(map[string]int64)
@@ -139,6 +148,10 @@ func (sstable *SSTable) WriteSingleFile(path string, conf *config.Config) error 
 		}
 		println("Offset for", key, ":", offset)
 	}
+
+	file.Seek(compressionOffset, io.SeekStart)
+	file.Read(compressionByte[:])
+	fmt.Println("Compression byte written:", compressionByte[0])
 	return nil
 }
 
@@ -284,7 +297,7 @@ func buildMetadata(gen int, path string, db *Data, singleFile bool) *merkle.Merk
 	}
 	mt := merkle.NewMerkleTree(data)
 	if !singleFile {
-		err := mt.SerializeToBinaryFile(filename)
+		_, err := mt.SerializeToBinaryFile(filename, 0)
 		if err != nil {
 			panic("Error writing Merkle tree to file: " + err.Error())
 		}
@@ -303,7 +316,7 @@ func ReadBloomFilter(path string, conf *config.Config) (bloomfilter.BloomFilter,
 }
 
 func ReadMetadata(path string) (*merkle.MerkleTree, error) {
-	mt, err := merkle.DeserializeFromBinaryFile(path)
+	mt, err := merkle.DeserializeFromBinaryFile(path, 0)
 	if err != nil {
 		return nil, fmt.Errorf("error reading Merkle tree from file %s: %w", path, err)
 	}
@@ -313,7 +326,7 @@ func ReadMetadata(path string) (*merkle.MerkleTree, error) {
 // Ucitava offsete sa kraja fajla
 func ReadOffsetsFromFile(path string) (map[string]int64, error) {
 	offsets := make(map[string]int64)
-	file, err := os.Open(path)
+	file, err := os.OpenFile(path, os.O_RDONLY, 0644)
 	if err != nil {
 		panic("Error opening SSTable file: " + err.Error())
 	}
@@ -358,26 +371,36 @@ func (sstable *SSTable) ReadFilterMetaCompression(path string, offsets map[strin
 	if err != nil {
 		panic("Error opening data file: " + err.Error())
 	}
-	file.Seek(offsets["Filter"], io.SeekStart)
-	filterSize := offsets["Metadata"] - offsets["Filter"]
-	filterBytes := make([]byte, filterSize)
-	file.Read(filterBytes)
-	filters := bloomfilter.Deserialize(filterBytes)
-	sstable.Filter = filters[0]
-	file.Seek(offsets["Metadata"], io.SeekStart)
-	metadataSize := offsets["Compression"] - offsets["Metadata"]
-	metadataBytes := make([]byte, metadataSize)
-	file.Read(metadataBytes)
-	metadata, err := merkle.Deserialize(metadataBytes)
+	defer file.Close()
+	println(offsets["Compression"])
+	_, err = file.Seek(offsets["Compression"], io.SeekStart)
 	if err != nil {
-		panic("Error reading Merkle tree from file: " + err.Error())
+		return fmt.Errorf("error seeking to compression offset: %w", err)
 	}
-	sstable.Metadata = metadata
-	file.Seek(offsets["Compression"], io.SeekStart)
-	compressionSize := 1
-	compressionBytes := make([]byte, compressionSize)
-	file.Read(compressionBytes)
+	compressionBytes := make([]byte, 1)
+	_, err = file.Read(compressionBytes)
+	if err != nil {
+		return fmt.Errorf("error reading compression bytes: %w", err)
+	}
+	println("Compression bytes read:", compressionBytes[0])
 	sstable.UseCompression = compressionBytes[0] == 1
+	// Citanje Bloom filtera
+	file.Seek(offsets["Filter"], io.SeekStart)
+	filterSize := int(offsets["Metadata"] - offsets["Filter"])
+	filterBytes := make([]byte, filterSize)
+	_, err = file.Read(filterBytes)
+	if err != nil {
+		return fmt.Errorf("error reading Bloom filter from file: %w", err)
+	}
+	sstable.Filter = bloomfilter.Deserialize(filterBytes)[0]
+
+	// Citanje Merkle stabla
+	//metadataSize := int(offsets["Compression"] - offsets["Metadata"])
+	sstable.Metadata, err = merkle.DeserializeFromBinaryFile(path, offsets["Metadata"])
+	if err != nil {
+		return fmt.Errorf("error deserializing Merkle tree: %w", err)
+	}
+
 	return nil
 }
 
@@ -428,6 +451,8 @@ func NewSSTable(conf *config.Config, level int, gen int, dict *compression.Dicti
 		} else {
 			sstable.CompressionKey = nil
 		}
+
+		println("Using compression:", sstable.UseCompression)
 	}
 
 	if !sstable.SingleFile {
@@ -437,7 +462,6 @@ func NewSSTable(conf *config.Config, level int, gen int, dict *compression.Dicti
 		if err != nil {
 			panic("Error reading compression info from file: " + err.Error())
 		}
-		println("Dictionary read from file:", dictPath)
 		sstable.UseCompression = useCompression
 		sstable.CompressionKey = dict
 		if !useCompression {
@@ -458,14 +482,12 @@ func NewSSTable(conf *config.Config, level int, gen int, dict *compression.Dicti
 		}
 		sstable.Data = data
 	} else {
-		println(sstable.Index.IndexFile.Offset)
 		data, err := ReadData(dataPath, conf, sstable.CompressionKey, sstable.Data.DataFile.Offset, sstable.Index.IndexFile.Offset)
 		if err != nil {
 			panic("Error reading data from file: " + err.Error())
 		}
 		sstable.Data = data
 	}
-	println("Data read successfully")
 	// Citanje Index fajla
 	indexPath := dataPath
 	if !sstable.SingleFile {
@@ -483,7 +505,6 @@ func NewSSTable(conf *config.Config, level int, gen int, dict *compression.Dicti
 		sstable.Index = index
 	}
 
-	println("Index read successfully")
 	// Citanje Summary fajla
 	summaryPath := indexPath
 	if !sstable.SingleFile {
@@ -564,7 +585,7 @@ func WriteSSTable(sstable *SSTable, dir string, conf *config.Config) error {
 
 	// Write Metadata
 	metadataPath := CreateFileName(path, sstable.Gen, "Metadata", "db")
-	err = sstable.Metadata.SerializeToBinaryFile(metadataPath)
+	_, err = sstable.Metadata.SerializeToBinaryFile(metadataPath, 0)
 	if err != nil {
 		return fmt.Errorf("error writing Merkle tree to file %s: %w", metadataPath, err)
 	}
