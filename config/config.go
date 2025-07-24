@@ -84,8 +84,8 @@ func LoadConfigFile(path string) (*Config, error) {
 			WalDirectory:   "data",
 		},
 		Memtable: MemtableConfig{
-			NumberOfMemtables: 5,
-			NumberOfEntries:   50,
+			NumberOfMemtables: 10,
+			NumberOfEntries:   500,
 			Structure:         "skiplist",
 		},
 		Skiplist: SkiplistConfig{
