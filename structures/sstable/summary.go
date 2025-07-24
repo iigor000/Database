@@ -30,14 +30,27 @@ func (sb *Summary) WriteSummary(path string, conf *config.Config) error {
 	if err != nil {
 		return fmt.Errorf("failed to serialize summary header: %w", err)
 	}
-	if _, err := bm.AppendBlock(path, header); err != nil {
+	bn, err := bm.AppendBlock(path, header)
+	if err != nil {
 		return fmt.Errorf("failed to write summary header: %w", err)
 	}
+	sb.SummaryFile.Path = path
+
+	sb.SummaryFile.Offset = int64(bn * conf.Block.BlockSize)
 
 	for _, record := range sb.Records {
 		err := record.WriteSummaryRecord(path, bm)
 		if err != nil {
 			return err
+		}
+		sb.SummaryFile.SizeOnDisk = int64(bn * conf.Block.BlockSize)
+	}
+	println("Summary size on disk:", sb.SummaryFile.SizeOnDisk)
+	serializedData, _ := sb.Records[len(sb.Records)-1].Serialize()
+	for i := 1; i < 10001; i++ {
+		if len(serializedData) < i*conf.Block.BlockSize {
+			sb.SummaryFile.SizeOnDisk += int64(i * conf.Block.BlockSize)
+			break
 		}
 	}
 	return nil
@@ -80,9 +93,14 @@ func (s *Summary) SerializeHeader() ([]byte, error) {
 	return serializedData, nil
 }
 
-func ReadSummary(path string, conf *config.Config) (*Summary, error) {
+func ReadSummary(path string, conf *config.Config, startOffset, endOffset int64) (*Summary, error) {
 	bm := block_organization.NewBlockManager(conf)
-	block_num := 0 // Pocinjemo od prvog bloka
+	block_num := int(startOffset / int64(conf.Block.BlockSize)) // Pocinjemo od bloka koji sadrzi startOffset
+	end_block := int(endOffset / int64(conf.Block.BlockSize))   // Kraj bloka koji sadrzi endOffset
+	if endOffset <= startOffset {
+		end_block = -1 // Kraj bloka koji sadrzi endOffset
+	}
+	println(end_block)
 	summary := &Summary{}
 	data, err := bm.ReadBlock(path, block_num)
 	if err != nil {
@@ -95,7 +113,12 @@ func ReadSummary(path string, conf *config.Config) (*Summary, error) {
 	if err := summary.DeserializeHeader(data); err != nil {
 		return nil, fmt.Errorf("failed to deserialize summary header: %w", err)
 	}
-	block_num++
+	for i := 1; i < 1000; i++ {
+		if len(data) == i*conf.Block.BlockSize {
+			block_num += i
+			break
+		}
+	}
 	for {
 		block, err := bm.ReadBlock(path, block_num)
 		if err != nil {
@@ -108,16 +131,30 @@ func ReadSummary(path string, conf *config.Config) (*Summary, error) {
 		if len(block) == 0 {
 			break // Kraj fajla
 		}
-
+		block_num1 := block_num
+		for i := 1; i < 1000; i++ {
+			if len(block) == i*conf.Block.BlockSize {
+				block_num1 = i + block_num
+				break
+			}
+		}
+		println("Reading block number:", block_num1)
+		if end_block != -1 && block_num1 > end_block {
+			break // Dostigli smo kraj bloka koji nas zanima
+		}
 		sr := &SummaryRecord{}
 		err = sr.Deserialize(block)
 		if err != nil {
 			return nil, err
 		}
 		summary.Records = append(summary.Records, *sr)
-		block_num++
+		block_num = block_num1
 	}
-
+	summary.SummaryFile = File{
+		Path:       path,
+		Offset:     startOffset,
+		SizeOnDisk: int64(block_num)*int64(conf.Block.BlockSize) - startOffset,
+	}
 	return summary, nil
 }
 

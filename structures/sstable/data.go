@@ -129,23 +129,30 @@ func (dr *DataRecord) calcCRC() uint32 {
 func (db *Data) WriteData(path string, conf *config.Config, dict *compression.Dictionary) (*Data, error) {
 	bm := block_organization.NewBlockManager(conf)
 	rec := 0
-	bn := 0
 	for _, record := range db.Records {
+
 		bn, err := record.WriteDataRecord(path, dict, bm)
 		if err != nil {
 			return db, fmt.Errorf("error writing data record to file %s: %w", path, err)
 		}
 		db.Records[rec].Offset = bn * conf.Block.BlockSize // Racunamo ofset kao broj bloka pomnozen sa velicinom bloka
+		println(bn)
+		println("Record written at offset:", db.Records[rec].Offset)
 		rec++
+		db.DataFile.SizeOnDisk = int64(bn * conf.Block.BlockSize)
 	}
-	db.DataFile.SizeOnDisk = int64(bn * conf.Block.BlockSize)
 	return db, nil
 }
 
 // Citanje DataBlock iz fajla
-func ReadData(path string, conf *config.Config, dict *compression.Dictionary) (*Data, error) {
+func ReadData(path string, conf *config.Config, dict *compression.Dictionary, startOffset, endOffset int64) (*Data, error) {
 	bm := block_organization.NewBlockManager(conf)
-	block_num := 0 // Pocinjemo od prvog bloka
+	block_num := int(startOffset / int64(conf.Block.BlockSize)) // Pocinjemo od bloka koji sadrzi startOffset
+	end_block := int(endOffset / int64(conf.Block.BlockSize))   // Kraj bloka koji sadrzi endOffset
+	println("Start block:", block_num, "End block:", end_block)
+	if endOffset <= startOffset {
+		end_block = -1 // Kraj bloka koji sadrzi endOffset
+	}
 	dataBlock := &Data{}
 
 	for {
@@ -160,7 +167,16 @@ func ReadData(path string, conf *config.Config, dict *compression.Dictionary) (*
 		if len(block) == 0 {
 			break // Nema vise podataka
 		}
-
+		block_num1 := block_num
+		for i := 1; i < 1000; i++ {
+			if len(block) == i*conf.Block.BlockSize {
+				block_num1 = block_num + i
+				break
+			}
+		}
+		if end_block != -1 && block_num1 > end_block {
+			break
+		}
 		record := DataRecord{}
 		if err := record.Deserialize(block, dict); err != nil {
 			return nil, fmt.Errorf("error deserializing data record: %w", err)
@@ -168,7 +184,13 @@ func ReadData(path string, conf *config.Config, dict *compression.Dictionary) (*
 		//dict.Print()
 		record.Offset = block_num * conf.Block.BlockSize // Racunamo ofset kao broj bloka pomnozen sa velicinom bloka
 		dataBlock.Records = append(dataBlock.Records, record)
-		block_num++
+		block_num = block_num1
+
+	}
+	dataBlock.DataFile = File{
+		Path:       path,
+		Offset:     startOffset,
+		SizeOnDisk: endOffset - startOffset,
 	}
 	return dataBlock, nil
 }
@@ -184,6 +206,7 @@ func (dr *DataRecord) Deserialize(data []byte, dict *compression.Dictionary) err
 	// Citanje CRC
 	dr.CRC = binary.LittleEndian.Uint32(data[:4])
 	data = data[4:]
+
 	// Citanje Timestamp
 	dr.Timestamp = int64(binary.LittleEndian.Uint64(data[:8]))
 	data = data[8:]

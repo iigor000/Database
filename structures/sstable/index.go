@@ -45,13 +45,18 @@ func (ib *Index) WriteIndex(path string, conf *config.Config) error {
 	rec := 0
 	for _, record := range ib.Records {
 		i, err := record.WriteIndexRecord(path, bm)
+		if rec == 0 {
+			ib.IndexFile.Offset = int64(i) * int64(conf.Block.BlockSize)
+		}
 		if err != nil {
 			return err
 		}
 		ib.Records[rec].IndexOffset = i * conf.Block.BlockSize // Racunamo IndexOffset kao broj bloka pomnozen sa velicinom bloka
 		rec++
+		ib.IndexFile.SizeOnDisk = int64(i) * int64(conf.Block.BlockSize)
 	}
-
+	ib.IndexFile.Path = path
+	ib.IndexFile.SizeOnDisk = ib.IndexFile.SizeOnDisk - ib.IndexFile.Offset
 	return nil
 }
 
@@ -70,9 +75,13 @@ func (ir *IndexRecord) Serialize() ([]byte, int) {
 }
 
 // ReadIndexBlock cita IndexBlock iz fajla
-func ReadIndex(path string, conf *config.Config) (*Index, error) {
+func ReadIndex(path string, conf *config.Config, startOffset, endOffset int64) (*Index, error) {
 	bm := block_organization.NewBlockManager(conf)
-	blockNum := 0 // Pocinjemo od prvog bloka
+	blockNum := int(startOffset / int64(conf.Block.BlockSize)) // Pocinjemo od bloka koji sadrzi startOffset
+	endBlock := int(endOffset / int64(conf.Block.BlockSize))   // Kraj bloka koji sadrzi endOffset
+	if endOffset <= startOffset {
+		endBlock = -1 // Kraj bloka koji sadrzi endOffset
+	}
 	indexs := &Index{}
 
 	for {
@@ -86,14 +95,31 @@ func ReadIndex(path string, conf *config.Config) (*Index, error) {
 		if len(block) == 0 {
 			break // Nema vise podataka
 		}
+		blockNum1 := blockNum
+		for i := 1; i < 1000; i++ {
+			if len(block) == i*conf.Block.BlockSize {
+				blockNum1 += i
+				break
+			}
+		}
+		if endBlock != -1 && blockNum1 > endBlock {
+			break // Dostigli smo kraj bloka koji nas zanima
+		}
 		record := IndexRecord{}
 		if err := record.Deserialize(block); err != nil {
 			return nil, err
 		}
 		record.IndexOffset = blockNum * conf.Block.BlockSize // Racunamo ofset kao broj bloka pomnozen sa velicinom bloka
 		indexs.Records = append(indexs.Records, record)
-		blockNum++
+		blockNum = blockNum1
+
 	}
+	indexs.IndexFile = File{
+		Path:       path,
+		Offset:     startOffset,
+		SizeOnDisk: int64(blockNum)*int64(conf.Block.BlockSize) - startOffset, // Racunamo velicinu fajla kao broj blokova pomnozen sa velicinom bloka minus startOffset
+	}
+
 	return indexs, nil
 }
 

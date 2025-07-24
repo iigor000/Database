@@ -96,7 +96,7 @@ func TestDatabase_Delete(t *testing.T) {
 
 func TestDatabase_PutMany(t *testing.T) {
 	// Test inserting multiple key-value pairs into the database
-	config, err := config.LoadConfigFile("config/config.json")
+	config, err := config.LoadConfigFile("../config/config.json")
 	if err != nil {
 		t.Fatalf("Failed to load config: %v", err)
 	}

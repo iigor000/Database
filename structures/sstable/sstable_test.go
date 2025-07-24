@@ -31,7 +31,7 @@ func TestSSTable(t *testing.T) {
 		},
 	}
 	// Initialize a memtable with some data
-	memtable := memtable.NewMemtable(conf, conf.Memtable.NumberOfEntries)
+	memtable := memtable.NewMemtable(conf)
 	// Add some entries to the memtable
 	memtable.Update([]byte("key1"), []byte("value1"), 1, false)
 	memtable.Update([]byte("key2"), []byte("value2"), 2, false)
@@ -76,8 +76,9 @@ func TestSSTableRead(t *testing.T) {
 	conf := &config.Config{
 		SSTable: config.SSTableConfig{
 			SstableDirectory: "./sstable_test",
-			UseCompression:   true,
+			UseCompression:   false,
 			SummaryLevel:     2,
+			SingleFile:       true,
 		},
 		Memtable: config.MemtableConfig{
 			NumberOfMemtables: 1,
@@ -93,13 +94,14 @@ func TestSSTableRead(t *testing.T) {
 	}
 
 	// Initialize a memtable with some data
-	memtable := memtable.NewMemtable(conf, conf.Memtable.NumberOfEntries)
+	memtable := memtable.NewMemtable(conf)
 	// Add some entries to the memtable
+
+	memtable.Update([]byte("key5"), []byte("value5"), 5, false)
 	memtable.Update([]byte("key1"), []byte("value1"), 1, false)
 	memtable.Update([]byte("key2"), []byte("value2"), 2, false)
 	memtable.Update([]byte("key3"), []byte("value3"), 3, false)
 	memtable.Update([]byte("key4"), []byte("value4"), 4, false)
-	memtable.Update([]byte("key5"), []byte("value5"), 5, false)
 	println("Memtable entries:")
 	memtable.Print()
 	dict := compression.NewDictionary()
