@@ -68,7 +68,6 @@ func main() {
 			err := db.Put(key, []byte(value))
 			if err != nil {
 				fmt.Println(err)
-				exit = true
 				break
 			}
 			fmt.Println("Data inserted successfully")
@@ -82,7 +81,6 @@ func main() {
 			value, found, err := db.Get(key)
 			if err != nil {
 				fmt.Println("Error retrieving data:", err)
-				exit = true
 				break
 			}
 			if !found {
@@ -134,7 +132,6 @@ func main() {
 			err = db.NewBloomFilter(key, expectedElements, falsePositiveProbability)
 			if err != nil {
 				fmt.Println("Error creating BloomFilter:", err)
-				exit = true
 			}
 		case "delbl":
 			fmt.Println("Enter the key for BloomFilter")
@@ -146,7 +143,6 @@ func main() {
 			err := db.DeleteBloomFilter(key)
 			if err != nil {
 				fmt.Println("Error deleting BloomFilter:", err)
-				exit = true
 			} else {
 				fmt.Println("BloomFilter deleted successfully")
 			}
@@ -166,7 +162,6 @@ func main() {
 			err := db.AddToBloomFilter(key, []byte(value))
 			if err != nil {
 				fmt.Println("Error adding to BloomFilter:", err)
-				exit = true
 				break
 			}
 			fmt.Println("Value added to BloomFilter successfully")
@@ -186,7 +181,6 @@ func main() {
 			found, err := db.CheckInBloomFilter(key, []byte(value))
 			if err != nil {
 				fmt.Println("Error checking BloomFilter:", err)
-				exit = true
 			} else if found {
 				fmt.Println("Value is likely in the BloomFilter")
 			} else {
@@ -219,7 +213,6 @@ func main() {
 			err = db.CreateCMS(key, errorRate, confidenceLevel)
 			if err != nil {
 				fmt.Println("Error creating CountMinSketch:", err)
-				exit = true
 			} else {
 				fmt.Println("CountMinSketch created successfully")
 			}
@@ -232,7 +225,6 @@ func main() {
 			err := db.DeleteCMS(key)
 			if err != nil {
 				fmt.Println("Error deleting CountMinSketch:", err)
-				exit = true
 			} else {
 				fmt.Println("CountMinSketch deleted successfully")
 			}
@@ -250,7 +242,6 @@ func main() {
 			err := db.AddToCMS(key, []byte(value))
 			if err != nil {
 				fmt.Println("Error adding to CountMinSketch:", err)
-				exit = true
 			} else {
 				fmt.Println("Value added to CountMinSketch successfully")
 			}
@@ -268,7 +259,6 @@ func main() {
 			count, err := db.CheckInCMS(key, []byte(value))
 			if err != nil {
 				fmt.Println("Error checking CountMinSketch:", err)
-				exit = true
 			} else {
 				fmt.Printf("Count for '%s' in CountMinSketch '%s': %d\n", value, key, count)
 			}
@@ -291,7 +281,6 @@ func main() {
 			err = db.CreateHLL(key, precision)
 			if err != nil {
 				fmt.Println("Error creating HyperLogLog:", err)
-				exit = true
 			} else {
 				fmt.Println("HyperLogLog created successfully")
 			}
@@ -304,7 +293,6 @@ func main() {
 			err := db.DeleteHLL(key)
 			if err != nil {
 				fmt.Println("Error deleting HyperLogLog:", err)
-				exit = true
 			} else {
 				fmt.Println("HyperLogLog deleted successfully")
 			}
@@ -322,7 +310,6 @@ func main() {
 			err := db.AddToHLL(key, []byte(value))
 			if err != nil {
 				fmt.Println("Error adding to HyperLogLog:", err)
-				exit = true
 			} else {
 				fmt.Println("Value added to HyperLogLog successfully")
 			}
@@ -335,7 +322,6 @@ func main() {
 			count, err := db.EstimateHLL(key)
 			if err != nil {
 				fmt.Println("Error estimating HyperLogLog:", err)
-				exit = true
 			} else {
 				fmt.Printf("Estimated count for HyperLogLog '%s': %f\n", key, count)
 			}
@@ -355,7 +341,6 @@ func main() {
 			err := db.AddSHFingerprint(key, text)
 			if err != nil {
 				fmt.Println("Error adding fingerprint:", err)
-				exit = true
 			} else {
 				fmt.Println("Fingerprint added successfully")
 			}
@@ -369,7 +354,6 @@ func main() {
 			err := db.DeleteSHFingerprint(key)
 			if err != nil {
 				fmt.Println("Error deleting fingerprint:", err)
-				exit = true
 			} else {
 				fmt.Println("Fingerprint deleted successfully")
 			}
@@ -389,7 +373,6 @@ func main() {
 			distance, err := db.GetHemmingDistance(key1, key2)
 			if err != nil {
 				fmt.Println("Error getting Hemingway distance:", err)
-				exit = true
 			} else {
 				fmt.Printf("Hemingway distance between '%s' and '%s': %d\n", key1, key2, distance)
 			}

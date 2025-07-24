@@ -45,6 +45,13 @@ func FlushSSTable(conf *config.Config, memtable memtable.Memtable, generation in
 	var sstable SSTable
 	sstable.UseCompression = conf.SSTable.UseCompression
 	sstable.CompressionKey = dict
+
+	if sstable.UseCompression && (dict == nil || dict.IsEmpty()) {
+		println("WARNING: Compression enabled but dictionary is nil/empty, disabling compression")
+		sstable.UseCompression = false
+		sstable.CompressionKey = nil
+	}
+
 	sstable.Level = 1 // Postavljamo nivo na 1, jer se Memtable flushuje kao SSTable na prvi nivo
 	sstable.Gen = generation
 	path := fmt.Sprintf("%s/%d/%d", conf.SSTable.SstableDirectory, sstable.Level, sstable.Gen)
@@ -108,18 +115,19 @@ func (sstable *SSTable) WriteSingleFile(path string, conf *config.Config) error 
 	if err != nil {
 		return fmt.Errorf("error serializing metadata: %w", err)
 	}
+
 	compressionOffset := metadataOffset + int64(metadataSize)
 	_, err = file.Seek(compressionOffset, io.SeekStart)
 	if err != nil {
 		return fmt.Errorf("error seeking to compression offset: %w", err)
 	}
-	var compressionByte [1]byte
+	var compressionByte []byte
 	if sstable.UseCompression {
-		compressionByte[0] = 1
+		compressionByte = append(compressionByte, 1)
 	} else {
-		compressionByte[0] = 0
+		compressionByte = append(compressionByte, 0)
 	}
-	_, err = file.Write(compressionByte[:])
+	_, err = file.Write(compressionByte)
 	if err != nil {
 		return fmt.Errorf("error writing compression info: %w", err)
 	}
@@ -139,7 +147,7 @@ func (sstable *SSTable) WriteSingleFile(path string, conf *config.Config) error 
 	offsets["Compression"] = compressionOffset
 	_, err = file.Write([]byte("TOC\n"))
 	if err != nil {
-		return nil
+		return err
 	}
 	for key, offset := range offsets {
 		_, err = file.Write([]byte(fmt.Sprintf("%s: %d\n", key, offset)))
@@ -149,9 +157,6 @@ func (sstable *SSTable) WriteSingleFile(path string, conf *config.Config) error 
 		println("Offset for", key, ":", offset)
 	}
 
-	file.Seek(compressionOffset, io.SeekStart)
-	file.Read(compressionByte[:])
-	fmt.Println("Compression byte written:", compressionByte[0])
 	return nil
 }
 
@@ -371,17 +376,32 @@ func (sstable *SSTable) ReadFilterMetaCompression(path string, offsets map[strin
 	if err != nil {
 		panic("Error opening data file: " + err.Error())
 	}
-	defer file.Close()
-	println(offsets["Compression"])
-	_, err = file.Seek(offsets["Compression"], io.SeekStart)
+	compressionOffset := offsets["Compression"]
+	println("=== DEBUG: Compression reading ===")
+	println("Compression offset from TOC:", compressionOffset)
+
+	// Read a few bytes around the compression offset to see what's there
+	file.Seek(compressionOffset-2, io.SeekStart)
+	debugBytes := make([]byte, 5)
+	file.Read(debugBytes)
+	println("Bytes around compression offset:")
+	for i, b := range debugBytes {
+		println("  Offset", compressionOffset-2+int64(i), ":", b)
+	}
+
+	// Now read the actual compression byte
+	_, err = file.Seek(compressionOffset, io.SeekStart)
 	if err != nil {
 		return fmt.Errorf("error seeking to compression offset: %w", err)
 	}
 	compressionBytes := make([]byte, 1)
-	_, err = file.Read(compressionBytes)
+	n, err := file.Read(compressionBytes)
 	if err != nil {
 		return fmt.Errorf("error reading compression bytes: %w", err)
 	}
+	println("Bytes read:", n)
+	println("Compression byte read:", compressionBytes[0])
+
 	println("Compression bytes read:", compressionBytes[0])
 	sstable.UseCompression = compressionBytes[0] == 1
 	// Citanje Bloom filtera

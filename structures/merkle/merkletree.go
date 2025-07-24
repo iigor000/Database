@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/gob"
 	"errors"
+	"io"
 	"os"
 )
 
@@ -86,12 +87,28 @@ func (t *MerkleTree) SerializeToBinaryFile(filename string, offset int64) (int, 
 	if _, err := file.Seek(offset, 0); err != nil {
 		return 0, err
 	}
+
+	// Get the current position before writing
+	startPos, err := file.Seek(0, io.SeekCurrent)
+	if err != nil {
+		return 0, err
+	}
+
 	serializedNodes := BFS(t)
 	encoder := gob.NewEncoder(file)
 	if err := encoder.Encode(serializedNodes); err != nil {
 		return 0, err
 	}
-	return len(serializedNodes), nil
+
+	// Get the current position after writing
+	endPos, err := file.Seek(0, io.SeekCurrent)
+	if err != nil {
+		return 0, err
+	}
+
+	// Return the number of bytes written
+	bytesWritten := int(endPos - startPos)
+	return bytesWritten, nil
 }
 
 // Deserijalizacija Merkle stabla iz binarne datoteke merklee.bin
