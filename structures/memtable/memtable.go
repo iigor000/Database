@@ -21,7 +21,6 @@ type Memtables struct {
 
 // Konstruktor za Memtables strukturu
 func NewMemtables(conf *config.Config) *Memtables {
-	println(conf.Memtable.NumberOfEntries)
 	memtables := make(map[int]*Memtable)
 	for i := 0; i < conf.Memtable.NumberOfMemtables; i++ {
 		memtables[i] = NewMemtable(conf)

@@ -1,7 +1,11 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
+	"os"
+	"strconv"
+	"strings"
 
 	"github.com/iigor000/database/config"
 	"github.com/iigor000/database/fun"
@@ -14,14 +18,17 @@ func main() {
 		return
 	}
 
+	scanner := bufio.NewScanner(os.Stdin)
 	var username string
 
 	fmt.Println("NoSQL Database")
 	for {
 		fmt.Println("Enter username: ")
-		fmt.Scan(&username)
-		if username != "" {
-			break
+		if scanner.Scan() {
+			username = strings.TrimSpace(scanner.Text())
+			if username != "" {
+				break
+			}
 		}
 		fmt.Println("Username cannot be empty. Please try again.")
 	}
@@ -34,22 +41,30 @@ func main() {
 
 	fun.CreateBucket(db)
 
-	var exit bool = false
-	for !exit {
+	helpstr := "help - Print Commands\nput - Add Entry to Database\nget - Get Entry from Database\ndelete - Delete Entry from Database\naddbl - Add BloomFilter\ndelbl - Delete BloomFilter\naddtobl - Add key to BloomFilter\ngetbl - Check key in BloomFilter\naddcms - Add CountMinSketch\ndelcms - Delete CountMinSketch\naddtocms - Add key to CountMinSketch\ngetcms - Check key in CountMinSketch\naddhll - Add HyperLogLog\ndelhll - Delete HyperLogLog\naddtohll - Add key to HyperLogLog\ngethll - Estimate HyperLogLog\naddfp - Add Fingerprint of text\ndelfp - Delete fingerprint\ngetdist - GetHemingway Distance of Two Fingerprints \nexit - Exit"
+	fmt.Println(helpstr)
 
-		fmt.Println("Choose\n1.PUT\n2.GET\n3.DELETE\n4.EXIT")
-		var choice int
-		fmt.Scan(&choice)
+	var exit bool = false
+	for !exit && scanner.Scan() {
+		choice := strings.ToLower(strings.TrimSpace(scanner.Text()))
+		println("")
+
 		switch choice {
-		case 1:
-			// PUT
+		case "help":
+			fmt.Println(helpstr)
+		case "put":
 			fmt.Println("Enter the key")
-			var key string
-			fmt.Scan(&key)
+			if !scanner.Scan() {
+				break
+			}
+			key := strings.TrimSpace(scanner.Text())
+
 			fmt.Println("Enter the value")
-			var value string
-			fmt.Scan(&value)
-			// TODO: Implement PUT
+			if !scanner.Scan() {
+				break
+			}
+			value := strings.TrimSpace(scanner.Text())
+
 			err := db.Put(key, []byte(value))
 			if err != nil {
 				fmt.Println(err)
@@ -57,12 +72,13 @@ func main() {
 				break
 			}
 			fmt.Println("Data inserted successfully")
-		case 2:
-			// GET
+		case "get":
 			fmt.Println("Enter the key")
-			var key string
-			fmt.Scan(&key)
-			// TODO: Implement GET
+			if !scanner.Scan() {
+				break
+			}
+			key := strings.TrimSpace(scanner.Text())
+
 			value, found, err := db.Get(key)
 			if err != nil {
 				fmt.Println("Error retrieving data:", err)
@@ -74,25 +90,316 @@ func main() {
 			} else {
 				fmt.Println(string(value))
 			}
-		case 3:
-			// DELETE
+		case "delete":
 			fmt.Println("Enter the key")
-			var key string
-			fmt.Scan(&key)
-			// TODO: Implement DELETE
+			if !scanner.Scan() {
+				break
+			}
+			key := strings.TrimSpace(scanner.Text())
+
 			err := db.Delete(key)
 			if err != nil {
 				fmt.Println(err)
 				exit = true
 				break
 			}
-			fmt.Println("Succesfully deleted entry")
-		case 4:
+			fmt.Println("Successfully deleted entry")
+		case "addbl":
+			fmt.Println("Enter the key for BloomFilter")
+			if !scanner.Scan() {
+				break
+			}
+			key := strings.TrimSpace(scanner.Text())
+
+			fmt.Println("Enter the expected number of elements")
+			if !scanner.Scan() {
+				break
+			}
+			expectedElements, err := strconv.Atoi(strings.TrimSpace(scanner.Text()))
+			if err != nil {
+				fmt.Println("Invalid number:", err)
+				break
+			}
+
+			fmt.Println("Enter the false positive probability (between 0 and 1)")
+			if !scanner.Scan() {
+				break
+			}
+			falsePositiveProbability, err := strconv.ParseFloat(strings.TrimSpace(scanner.Text()), 64)
+			if err != nil {
+				fmt.Println("Invalid number:", err)
+				break
+			}
+
+			err = db.NewBloomFilter(key, expectedElements, falsePositiveProbability)
+			if err != nil {
+				fmt.Println("Error creating BloomFilter:", err)
+				exit = true
+			}
+		case "delbl":
+			fmt.Println("Enter the key for BloomFilter")
+			if !scanner.Scan() {
+				break
+			}
+			key := strings.TrimSpace(scanner.Text())
+
+			err := db.DeleteBloomFilter(key)
+			if err != nil {
+				fmt.Println("Error deleting BloomFilter:", err)
+				exit = true
+			} else {
+				fmt.Println("BloomFilter deleted successfully")
+			}
+		case "addtobl":
+			fmt.Println("Enter the key for BloomFilter")
+			if !scanner.Scan() {
+				break
+			}
+			key := strings.TrimSpace(scanner.Text())
+
+			fmt.Println("Enter the value to add to BloomFilter")
+			if !scanner.Scan() {
+				break
+			}
+			value := strings.TrimSpace(scanner.Text())
+
+			err := db.AddToBloomFilter(key, []byte(value))
+			if err != nil {
+				fmt.Println("Error adding to BloomFilter:", err)
+				exit = true
+				break
+			}
+			fmt.Println("Value added to BloomFilter successfully")
+		case "getbl":
+			fmt.Println("Enter the key for BloomFilter")
+			if !scanner.Scan() {
+				break
+			}
+			key := strings.TrimSpace(scanner.Text())
+
+			fmt.Println("Enter the value to check in BloomFilter")
+			if !scanner.Scan() {
+				break
+			}
+			value := strings.TrimSpace(scanner.Text())
+
+			found, err := db.CheckInBloomFilter(key, []byte(value))
+			if err != nil {
+				fmt.Println("Error checking BloomFilter:", err)
+				exit = true
+			} else if found {
+				fmt.Println("Value is likely in the BloomFilter")
+			} else {
+				fmt.Println("Value is definitely not in the BloomFilter")
+			}
+		case "addcms":
+			fmt.Println("Enter the key for CountMinSketch")
+			if !scanner.Scan() {
+				break
+			}
+			key := strings.TrimSpace(scanner.Text())
+			fmt.Println("Enter error rate, between 0 and 1")
+			if !scanner.Scan() {
+				break
+			}
+			errorRate, err := strconv.ParseFloat(strings.TrimSpace(scanner.Text()), 64)
+			if err != nil {
+				fmt.Println("Invalid error rate:", err)
+				break
+			}
+			fmt.Println("Enter the confidence level, between 0 and 1")
+			if !scanner.Scan() {
+				break
+			}
+			confidenceLevel, err := strconv.ParseFloat(strings.TrimSpace(scanner.Text()), 64)
+			if err != nil {
+				fmt.Println("Invalid confidence level:", err)
+				break
+			}
+			err = db.CreateCMS(key, errorRate, confidenceLevel)
+			if err != nil {
+				fmt.Println("Error creating CountMinSketch:", err)
+				exit = true
+			} else {
+				fmt.Println("CountMinSketch created successfully")
+			}
+		case "delcms":
+			fmt.Println("Enter the key for CountMinSketch")
+			if !scanner.Scan() {
+				break
+			}
+			key := strings.TrimSpace(scanner.Text())
+			err := db.DeleteCMS(key)
+			if err != nil {
+				fmt.Println("Error deleting CountMinSketch:", err)
+				exit = true
+			} else {
+				fmt.Println("CountMinSketch deleted successfully")
+			}
+		case "addtocms":
+			fmt.Println("Enter the key for CountMinSketch")
+			if !scanner.Scan() {
+				break
+			}
+			key := strings.TrimSpace(scanner.Text())
+			fmt.Println("Enter the value to add to CountMinSketch")
+			if !scanner.Scan() {
+				break
+			}
+			value := strings.TrimSpace(scanner.Text())
+			err := db.AddToCMS(key, []byte(value))
+			if err != nil {
+				fmt.Println("Error adding to CountMinSketch:", err)
+				exit = true
+			} else {
+				fmt.Println("Value added to CountMinSketch successfully")
+			}
+		case "getcms":
+			fmt.Println("Enter the key for CountMinSketch")
+			if !scanner.Scan() {
+				break
+			}
+			key := strings.TrimSpace(scanner.Text())
+			fmt.Println("Enter the value to check in CountMinSketch")
+			if !scanner.Scan() {
+				break
+			}
+			value := strings.TrimSpace(scanner.Text())
+			count, err := db.CheckInCMS(key, []byte(value))
+			if err != nil {
+				fmt.Println("Error checking CountMinSketch:", err)
+				exit = true
+			} else {
+				fmt.Printf("Count for '%s' in CountMinSketch '%s': %d\n", value, key, count)
+			}
+		case "addhll":
+			fmt.Println("Enter the key for HyperLogLog")
+			if !scanner.Scan() {
+				break
+			}
+			key := strings.TrimSpace(scanner.Text())
+			fmt.Println("Enter the precision (between 4 and 16)")
+			if !scanner.Scan() {
+				break
+			}
+			precisionStr := strings.TrimSpace(scanner.Text())
+			precision, err := strconv.Atoi(precisionStr)
+			if err != nil {
+				fmt.Println("Invalid precision:", err)
+				break
+			}
+			err = db.CreateHLL(key, precision)
+			if err != nil {
+				fmt.Println("Error creating HyperLogLog:", err)
+				exit = true
+			} else {
+				fmt.Println("HyperLogLog created successfully")
+			}
+		case "delhll":
+			fmt.Println("Enter the key for HyperLogLog")
+			if !scanner.Scan() {
+				break
+			}
+			key := strings.TrimSpace(scanner.Text())
+			err := db.DeleteHLL(key)
+			if err != nil {
+				fmt.Println("Error deleting HyperLogLog:", err)
+				exit = true
+			} else {
+				fmt.Println("HyperLogLog deleted successfully")
+			}
+		case "addtohll":
+			fmt.Println("Enter the key for HyperLogLog")
+			if !scanner.Scan() {
+				break
+			}
+			key := strings.TrimSpace(scanner.Text())
+			fmt.Println("Enter the value to add to HyperLogLog")
+			if !scanner.Scan() {
+				break
+			}
+			value := strings.TrimSpace(scanner.Text())
+			err := db.AddToHLL(key, []byte(value))
+			if err != nil {
+				fmt.Println("Error adding to HyperLogLog:", err)
+				exit = true
+			} else {
+				fmt.Println("Value added to HyperLogLog successfully")
+			}
+		case "gethll":
+			fmt.Println("Enter the key for HyperLogLog")
+			if !scanner.Scan() {
+				break
+			}
+			key := strings.TrimSpace(scanner.Text())
+			count, err := db.EstimateHLL(key)
+			if err != nil {
+				fmt.Println("Error estimating HyperLogLog:", err)
+				exit = true
+			} else {
+				fmt.Printf("Estimated count for HyperLogLog '%s': %f\n", key, count)
+			}
+		case "addfp":
+			fmt.Println("Enter the key for the fingerprint")
+			if !scanner.Scan() {
+				break
+			}
+			key := strings.TrimSpace(scanner.Text())
+
+			fmt.Println("Enter the text to fingerprint")
+			if !scanner.Scan() {
+				break
+			}
+			text := strings.TrimSpace(scanner.Text())
+
+			err := db.AddSHFingerprint(key, text)
+			if err != nil {
+				fmt.Println("Error adding fingerprint:", err)
+				exit = true
+			} else {
+				fmt.Println("Fingerprint added successfully")
+			}
+		case "delfp":
+			fmt.Println("Enter the key for the fingerprint")
+			if !scanner.Scan() {
+				break
+			}
+			key := strings.TrimSpace(scanner.Text())
+
+			err := db.DeleteSHFingerprint(key)
+			if err != nil {
+				fmt.Println("Error deleting fingerprint:", err)
+				exit = true
+			} else {
+				fmt.Println("Fingerprint deleted successfully")
+			}
+		case "getdist":
+			fmt.Println("Enter the first key for the fingerprint")
+			if !scanner.Scan() {
+				break
+			}
+			key1 := strings.TrimSpace(scanner.Text())
+
+			fmt.Println("Enter the second key for the fingerprint")
+			if !scanner.Scan() {
+				break
+			}
+			key2 := strings.TrimSpace(scanner.Text())
+
+			distance, err := db.GetHemmingDistance(key1, key2)
+			if err != nil {
+				fmt.Println("Error getting Hemingway distance:", err)
+				exit = true
+			} else {
+				fmt.Printf("Hemingway distance between '%s' and '%s': %d\n", key1, key2, distance)
+			}
+		case "exit":
 			fmt.Println("Goodbye!")
 			exit = true
 		default:
-			fmt.Println("Invalid choice")
+			if choice != "" {
+				fmt.Println("Invalid choice")
+			}
 		}
-
 	}
 }

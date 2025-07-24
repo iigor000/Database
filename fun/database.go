@@ -8,6 +8,7 @@ import (
 	// "github.com/iigor000/database/structures/adapter"
 	"github.com/iigor000/database/structures/cache"
 	"github.com/iigor000/database/structures/compression"
+	wal "github.com/iigor000/database/structures/writeAheadLog"
 
 	// "github.com/iigor000/database/structures/lsmtree"
 	"github.com/iigor000/database/structures/memtable"
@@ -18,16 +19,20 @@ import (
 //TODO: Dodati wal i kompresiju kad budu zavrseni
 
 type Database struct {
-	//wal
-	compression *compression.Dictionary
+	wal         *wal.WAL
 	memtables   *memtable.Memtables
 	config      *config.Config
 	cache       *cache.Cache
 	username    string
+	compression *compression.Dictionary // Kompresija koja se koristi za SSTable
 }
 
 func NewDatabase(config *config.Config, username string) (*Database, error) {
 	memtables := memtable.NewMemtables(config)
+	wal, err := wal.SetOffWAL(config)
+	if err != nil {
+		return nil, err
+	}
 	// TODO: Treba da se ucita BloomFilter i Summary iz SSTable-a
 	cache := cache.NewCache(config)
 	dict, err := compression.Read(config.Compression.DictionaryDir)
@@ -40,6 +45,7 @@ func NewDatabase(config *config.Config, username string) (*Database, error) {
 		cache:       cache,
 		username:    username,
 		compression: dict,
+		wal:         wal,
 	}, nil
 }
 
@@ -63,7 +69,7 @@ func (db *Database) Put(key string, value []byte) error {
 
 func (db *Database) put(key string, value []byte) error {
 
-	// TODO: Staviti write ahead log zapis
+	db.wal.Append([]byte(key), value, false) // Zapisujemo u WAL da se krece sa unosenjem novog zapisa
 
 	if db.compression == nil {
 		db.compression = compression.NewDictionary()
@@ -193,7 +199,7 @@ func (db *Database) Delete(key string) error {
 
 func (db *Database) delete(key string) error {
 
-	// TODO: Napisati u wal da se brise entry
+	db.wal.Append([]byte(key), []byte{}, true) // Zapisujemo u WAL da se krece sa brisanjem zapisa
 
 	// Brisanje iz memtable-a
 	found := db.memtables.Delete([]byte(key))

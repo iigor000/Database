@@ -29,14 +29,14 @@ func MakeCountMinSketch(epsilon float64, delta float64) CountMinSketch {
 }
 
 // Funckoja za dodavanje kljuca u CountMinSketch, prolazimo sve hash funckije i povecavamo vrednost u tabeli
-func (cms CountMinSketch) Add(key string) {
+func (cms CountMinSketch) Add(key []byte) {
 	for i, hashFunction := range cms.HashFunctions {
-		hash := hashFunction.Hash([]byte(key)) % uint64(len(cms.Table[0]))
+		hash := hashFunction.Hash(key) % uint64(len(cms.Table[0]))
 		cms.Table[i][hash]++
 	}
 }
 
-func (cms CountMinSketch) Read(key string) uint64 {
+func (cms CountMinSketch) Read(key []byte) uint64 {
 	// Pravimo maksimalnu vrednost za pocetak (jako velika vrednost, jer smo pomerili binarnu jedinicu za 63 mesta u levo)
 	min := uint64(1 << 63)
 

@@ -3,6 +3,7 @@ package hyperloglog
 import (
 	"crypto/md5"
 	"encoding/binary"
+	"errors"
 	"math"
 	"math/bits"
 )
@@ -65,15 +66,15 @@ func Hash(data []byte) uint64 {
 	// return binary.BigEndian.Uint64(fn.Sum(nil))
 }
 
-func MakeHyperLogLog(p int) HLL {
+func MakeHyperLogLog(p int) (HLL, error) {
 	if p < HLL_MIN_PRECISION || p > HLL_MAX_PRECISION {
-		panic("Precision must be between 4 and 16")
+		return HLL{}, errors.New("precision must be between 4 and 16")
 	}
 	return HLL{
 		m:   1 << uint(p),
 		p:   uint8(p),
 		reg: make([]uint8, 1<<p),
-	}
+	}, nil
 }
 
 func (hll *HLL) Add(value []byte) {
@@ -85,7 +86,7 @@ func (hll *HLL) Add(value []byte) {
 	}
 }
 
-func Serialize(hll HLL) []byte {
+func (hll *HLL) Serialize() []byte {
 	data := make([]byte, 1+len(hll.reg))
 	data[0] = hll.p
 	for i, val := range hll.reg {

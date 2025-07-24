@@ -5,7 +5,10 @@ import (
 )
 
 func TestHLL(t *testing.T) {
-	log := MakeHyperLogLog(16)
+	log, err := MakeHyperLogLog(16)
+	if err != nil {
+		t.Fatalf("Failed to create HyperLogLog: %v", err)
+	}
 	log.Add([]byte("bar"))
 	log.Add([]byte("foo"))
 	log.Add([]byte("baz"))
