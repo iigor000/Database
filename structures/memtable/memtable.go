@@ -186,13 +186,21 @@ func (m *Memtables) GetEntry(memtableIndex int, entryIndex int) (*adapter.Memtab
 }
 
 func (ms *Memtables) GetFirstEntry() adapter.MemtableEntry {
+
 	if len(ms.Memtables) > 0 {
-		for _, memtable := range ms.Memtables {
-			if memtable.Size > 0 {
-				firstKey := memtable.Keys[0]
-				entry, _ := memtable.Search(firstKey)
-				return *entry
+		minKey := ms.Memtables[0].Keys[0]
+		memIndex := 0
+		for i, memtable := range ms.Memtables {
+			for _, key := range memtable.Keys {
+				if bytes.Compare(key, minKey) < 0 {
+					minKey = key
+					memIndex = i
+				}
 			}
+		}
+		entry, found := ms.Memtables[memIndex].Search(minKey)
+		if found {
+			return *entry
 		}
 	}
 	return adapter.MemtableEntry{}

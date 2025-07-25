@@ -218,3 +218,40 @@ func TestMemtableIterate(t *testing.T) {
 
 	}
 }
+
+func TestMemtablesIterator(t *testing.T) {
+	conf := &config.Config{
+		Memtable: config.MemtableConfig{
+			NumberOfMemtables: 4,
+			NumberOfEntries:   5,
+			Structure:         "skiplist",
+		},
+		Skiplist: config.SkiplistConfig{
+			MaxHeight: 16,
+		},
+		Block: config.BlockConfig{
+			BlockSize: 4096,
+		},
+	}
+
+	memtables := NewMemtables(conf)
+	memtables.Update([]byte("key1"), []byte("value1"), 1, false)
+	memtables.Update([]byte("key2"), []byte("value2"), 2, false)
+	memtables.Update([]byte("key3"), []byte("value3"), 3, false)
+	memtables.Update([]byte("key4"), []byte("value4"), 4, false)
+	memtables.Update([]byte("key5"), []byte("value5"), 5, false)
+
+	iter := memtables.NewMemtablesIterator()
+	if iter == nil {
+		t.Error("Expected MemtablesIterator to be created")
+		return
+	}
+
+	for {
+		entry, ok := iter.Next()
+		if !ok {
+			break
+		}
+		fmt.Printf("Key: %s, Value: %s\n", entry.Key, entry.Value)
+	}
+}

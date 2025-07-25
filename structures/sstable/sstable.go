@@ -860,3 +860,40 @@ func (s *SSTable) DeleteFiles(conf *config.Config) error {
 
 	return nil
 }
+
+// ValidateMerkleTree proverava da li je doslo do izmene u podacima
+// Ako jeste, vraca true, ako nije, vraca false
+// Ako je doslo do greske u citanju podataka ili Merkle stabla, vraca gresku
+func (sstable *SSTable) ValidateMerkleTree(newData Data, conf *config.Config, dict *compression.Dictionary) (bool, error) {
+	if sstable.Metadata == nil {
+		return false, fmt.Errorf("merkle tree is not initialized")
+	}
+
+	db, err := ReadData(CreateFileName(sstable.Dir, sstable.Gen, "Data", "db"), conf, dict, sstable.Data.DataFile.Offset, sstable.Index.IndexFile.Offset)
+	if err != nil {
+		return false, fmt.Errorf("error reading data: %w", err)
+	}
+	data := make([][]byte, len(db.Records))
+	for i, record := range db.Records {
+		data[i] = record.Key
+		if !record.Tombstone {
+			data[i] = append(data[i], record.Value...)
+		}
+	}
+	old_mt := merkle.NewMerkleTree(data)
+	data1 := make([][]byte, len(newData.Records))
+	for i, record := range newData.Records {
+		data1[i] = record.Key
+		if !record.Tombstone {
+			data1[i] = append(data1[i], record.Value...)
+		}
+	}
+	new_mt := merkle.NewMerkleTree(data1)
+	if old_mt.MerkleRootHash == new_mt.MerkleRootHash {
+		println("There hasn't been any changes in the data, Merkle tree is valid")
+		return false, nil
+	} else {
+		println("There has been changes in the data, Merkle tree is not valid")
+		return true, nil
+	}
+}
