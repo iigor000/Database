@@ -120,7 +120,6 @@ func ReadSummary(path string, conf *config.Config, startOffset, endOffset int64)
 		}
 	}
 	for {
-		println("Reading block number:", block_num)
 		block, err := bm.ReadBlock(path, block_num)
 		if err != nil {
 			if err.Error() == "EOF" {

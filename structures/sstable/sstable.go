@@ -302,6 +302,15 @@ func buildMetadata(gen int, path string, db *Data, singleFile bool) *merkle.Merk
 	}
 	mt := merkle.NewMerkleTree(data)
 	if !singleFile {
+		// Proveri da li fajl postoji
+		if _, err := os.Stat(filename); os.IsNotExist(err) {
+			// Ako ne postoji, kreiraj ga
+			file, err := os.Create(filename)
+			if err != nil {
+				panic("Error creating Merkle tree file: " + err.Error())
+			}
+			file.Close()
+		}
 		_, err := mt.SerializeToBinaryFile(filename, 0)
 		if err != nil {
 			panic("Error writing Merkle tree to file: " + err.Error())
@@ -371,38 +380,20 @@ func ReadOffsetsFromFile(path string) (map[string]int64, error) {
 	return offsets, nil
 }
 
-func (sstable *SSTable) ReadFilterMetaCompression(path string, offsets map[string]int64) error {
+func (sstable *SSTable) ReadFilterMetaCompression(path string, offsets map[string]int64, readMerkle bool) error {
 	file, err := os.OpenFile(path, os.O_RDONLY, 0644)
 	if err != nil {
 		panic("Error opening data file: " + err.Error())
 	}
-	compressionOffset := offsets["Compression"]
-	println("=== DEBUG: Compression reading ===")
-	println("Compression offset from TOC:", compressionOffset)
-
-	// Read a few bytes around the compression offset to see what's there
-	file.Seek(compressionOffset-2, io.SeekStart)
-	debugBytes := make([]byte, 5)
-	file.Read(debugBytes)
-	println("Bytes around compression offset:")
-	for i, b := range debugBytes {
-		println("  Offset", compressionOffset-2+int64(i), ":", b)
-	}
-
-	// Now read the actual compression byte
-	_, err = file.Seek(compressionOffset, io.SeekStart)
+	_, err = file.Seek(offsets["Compression"], io.SeekStart)
 	if err != nil {
 		return fmt.Errorf("error seeking to compression offset: %w", err)
 	}
 	compressionBytes := make([]byte, 1)
-	n, err := file.Read(compressionBytes)
+	_, err = file.Read(compressionBytes)
 	if err != nil {
 		return fmt.Errorf("error reading compression bytes: %w", err)
 	}
-	println("Bytes read:", n)
-	println("Compression byte read:", compressionBytes[0])
-
-	println("Compression bytes read:", compressionBytes[0])
 	sstable.UseCompression = compressionBytes[0] == 1
 	// Citanje Bloom filtera
 	file.Seek(offsets["Filter"], io.SeekStart)
@@ -413,14 +404,14 @@ func (sstable *SSTable) ReadFilterMetaCompression(path string, offsets map[strin
 		return fmt.Errorf("error reading Bloom filter from file: %w", err)
 	}
 	sstable.Filter = bloomfilter.Deserialize(filterBytes)[0]
-
-	// Citanje Merkle stabla
-	//metadataSize := int(offsets["Compression"] - offsets["Metadata"])
-	sstable.Metadata, err = merkle.DeserializeFromBinaryFile(path, offsets["Metadata"])
-	if err != nil {
-		return fmt.Errorf("error deserializing Merkle tree: %w", err)
+	if readMerkle {
+		// Citanje Merkle stabla
+		//metadataSize := int(offsets["Compression"] - offsets["Metadata"])
+		sstable.Metadata, err = merkle.DeserializeFromBinaryFile(path, offsets["Metadata"])
+		if err != nil {
+			return fmt.Errorf("error deserializing Merkle tree: %w", err)
+		}
 	}
-
 	return nil
 }
 
@@ -458,11 +449,9 @@ func NewSSTable(conf *config.Config, level int, gen int, dict *compression.Dicti
 			},
 		}
 		sstable.FilterOffset = offsets["Filter"]
-		for key, offset := range offsets {
-			println("Offset for", key, ":", offset)
-		}
+
 		// Citamo compression info, bloom filter i Merkle tree
-		err = sstable.ReadFilterMetaCompression(path, offsets)
+		err = sstable.ReadFilterMetaCompression(path, offsets, true)
 		if err != nil {
 			panic("Error reading filter, metadata and compression info: " + err.Error())
 		}
@@ -733,6 +722,61 @@ func StartSSTable(level int, gen int, conf *config.Config, dict *compression.Dic
 		return nil, fmt.Errorf("invalid generation number: %d", gen)
 	}
 	dir := fmt.Sprintf("%s/%d/%d", conf.SSTable.SstableDirectory, level, gen)
+
+	if conf.SSTable.SingleFile {
+		sstable := &SSTable{
+			Gen:        gen,
+			Level:      level,
+			SingleFile: conf.SSTable.SingleFile,
+			Dir:        dir,
+		}
+		path := CreateFileName(dir, gen, "SSTable", "db")
+		offsets, err := ReadOffsetsFromFile(path)
+		if err != nil {
+			panic("Error reading offsets from file: " + err.Error())
+		}
+		sstable.Data = &Data{
+			DataFile: File{
+				Path:       path,
+				Offset:     offsets["Data"],
+				SizeOnDisk: offsets["Index"] - offsets["Data"],
+			},
+		}
+		sstable.Index = &Index{
+			IndexFile: File{
+				Path:       path,
+				Offset:     offsets["Index"],
+				SizeOnDisk: offsets["Summary"] - offsets["Index"],
+			},
+		}
+		sstable.Summary = &Summary{
+			SummaryFile: File{
+				Path:       path,
+				Offset:     offsets["Summary"],
+				SizeOnDisk: offsets["Filter"] - offsets["Summary"],
+			},
+		}
+		sstable.FilterOffset = offsets["Filter"]
+
+		// Citamo compression info, bloom filter i Merkle tree
+		err = sstable.ReadFilterMetaCompression(path, offsets, false)
+		if err != nil {
+			panic("Error reading filter, metadata and compression info: " + err.Error())
+		}
+		if sstable.UseCompression {
+			sstable.CompressionKey = dict
+		} else {
+			sstable.CompressionKey = nil
+		}
+		//Ucitavamo Summary
+		summary, err := ReadSummary(sstable.Summary.SummaryFile.Path, conf, sstable.Summary.SummaryFile.Offset, sstable.FilterOffset)
+		if err != nil {
+			return nil, fmt.Errorf("error reading summary: %w", err)
+		}
+		sstable.Summary = summary
+		return sstable, nil
+
+	}
 	// Ucitavamo BloomFiler
 	bfPath := CreateFileName(dir, gen, "Filter", "db")
 	bf, err := ReadBloomFilter(bfPath, conf)
@@ -759,7 +803,7 @@ func StartSSTable(level int, gen int, conf *config.Config, dict *compression.Dic
 		DataFile: File{
 			Path:       CreateFileName(dir, gen, "Data", "db"),
 			Offset:     0,
-			SizeOnDisk: 0,
+			SizeOnDisk: -1,
 		},
 		Records: []DataRecord{},
 	}
@@ -767,7 +811,7 @@ func StartSSTable(level int, gen int, conf *config.Config, dict *compression.Dic
 		IndexFile: File{
 			Path:       CreateFileName(dir, gen, "Index", "db"),
 			Offset:     0,
-			SizeOnDisk: 0,
+			SizeOnDisk: -1,
 		},
 		Records: []IndexRecord{},
 	}
@@ -783,6 +827,7 @@ func StartSSTable(level int, gen int, conf *config.Config, dict *compression.Dic
 		Filter:         bf,
 		Metadata:       &merkle.MerkleTree{},
 		Dir:            dir,
+		SingleFile:     conf.SSTable.SingleFile,
 	}
 	return sstable, nil
 }

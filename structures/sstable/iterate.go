@@ -28,8 +28,14 @@ func (si *SSTableIterator) Next() (adapter.MemtableEntry, bool) {
 	if si.currentRecord.Key == nil {
 		return adapter.MemtableEntry{}, false // Nema vise zapisa
 	}
-
 	rec := si.currentRecord
+	if si.sstable.SingleFile {
+		if int(si.sstable.Data.DataFile.SizeOnDisk) <= si.nextBlockNumber*si.blockManager.BlockSize {
+
+			si.Stop()
+			return rec, true
+		}
+	}
 	si.currentRecord, si.nextBlockNumber = si.sstable.Data.ReadRecord(si.blockManager, si.nextBlockNumber, si.sstable.CompressionKey)
 
 	if si.currentRecord.Key == nil {
@@ -67,6 +73,7 @@ func (sst *SSTable) PrefixIterate(prefix string, bm *block_organization.BlockMan
 	rec, nextBlock := sst.ReadRecordWithKey(bm, 0, prefix, false)
 	it.currentRecord = rec
 	it.nextBlockNumber = nextBlock
+
 	if it.currentRecord.Key == nil {
 		it.Stop() // Ako nema zapisa sa tim prefiksom, zatvaramo iterator
 		return nil
@@ -81,6 +88,12 @@ func (pi *PrefixIterator) Next() (adapter.MemtableEntry, bool) {
 		return adapter.MemtableEntry{}, false
 	}
 	record := pi.Iterator.currentRecord
+	if pi.Iterator.sstable.SingleFile {
+		if int(pi.Iterator.sstable.Data.DataFile.SizeOnDisk) <= pi.Iterator.nextBlockNumber*pi.Iterator.blockManager.BlockSize {
+			pi.Iterator.Stop()
+			return record, true
+		}
+	}
 	rec, nextBlock := pi.Iterator.sstable.Data.ReadRecord(pi.Iterator.blockManager, pi.Iterator.nextBlockNumber, pi.Iterator.sstable.CompressionKey)
 	if !bytes.HasPrefix(record.Key, []byte(pi.Prefix)) {
 		pi.Iterator.Stop() // Zatvaramo iterator ako nema vise zapisa sa tim prefiksom
@@ -88,6 +101,7 @@ func (pi *PrefixIterator) Next() (adapter.MemtableEntry, bool) {
 	}
 	pi.Iterator.currentRecord = rec
 	pi.Iterator.nextBlockNumber = nextBlock
+
 	if nextBlock == -1 {
 		pi.Iterator.Stop() // Zatvaramo iterator ako nema vise zapisa
 		return adapter.MemtableEntry{}, false
@@ -129,6 +143,12 @@ func (ri *RangeIterator) Next() (adapter.MemtableEntry, bool) {
 		return adapter.MemtableEntry{}, false // Nema vise zapisa
 	}
 	record := ri.Iterator.currentRecord
+	if ri.Iterator.sstable.SingleFile {
+		if int(ri.Iterator.sstable.Data.DataFile.SizeOnDisk) <= ri.Iterator.nextBlockNumber*ri.Iterator.blockManager.BlockSize {
+			ri.Iterator.Stop()
+			return record, false
+		}
+	}
 	rec, nextBlock := ri.Iterator.sstable.Data.ReadRecord(ri.Iterator.blockManager, ri.Iterator.nextBlockNumber, ri.Iterator.sstable.CompressionKey)
 	ri.Iterator.currentRecord = rec
 	ri.Iterator.nextBlockNumber = nextBlock

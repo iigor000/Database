@@ -166,6 +166,7 @@ func TestSSTableIterate(t *testing.T) {
 			SstableDirectory: "./sstable_test",
 			UseCompression:   true,
 			SummaryLevel:     2,
+			SingleFile:       true,
 		},
 		Memtable: config.MemtableConfig{
 			NumberOfMemtables: 1,
@@ -204,7 +205,7 @@ func TestSSTableIterate(t *testing.T) {
 	}
 	// Test PrefixIterate
 	println("Testing PrefixIterate...")
-	prefix := "key1"
+	prefix := "key3"
 	prefixIter := sstable.PrefixIterate(prefix, bm)
 	if prefixIter == nil {
 		t.Fatal("Failed to create Prefix iterator")
@@ -240,8 +241,9 @@ func TestSSTableScan(t *testing.T) {
 	conf := &config.Config{
 		SSTable: config.SSTableConfig{
 			SstableDirectory: "./sstable_test",
-			UseCompression:   false,
+			UseCompression:   true,
 			SummaryLevel:     2,
+			SingleFile:       true,
 		},
 		Memtable: config.MemtableConfig{
 			NumberOfMemtables: 1,
