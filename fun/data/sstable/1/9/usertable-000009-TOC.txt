@@ -1,0 +1,6 @@
+Generation: 9
+Data: data/sstable/1/9/usertable-000009-Data.db
+Index: data/sstable/1/9/usertable-000009-Index.db
+Summary: data/sstable/1/9/usertable-000009-Summary.db
+Filter: data/sstable/1/9/usertable-000009-Filter.db
+Metadata: data/sstable/1/9/usertable-000009-Metadata.db

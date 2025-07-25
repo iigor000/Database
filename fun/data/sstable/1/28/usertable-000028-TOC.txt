@@ -1,0 +1,6 @@
+Generation: 28
+Data: data/sstable/1/28/usertable-000028-Data.db
+Index: data/sstable/1/28/usertable-000028-Index.db
+Summary: data/sstable/1/28/usertable-000028-Summary.db
+Filter: data/sstable/1/28/usertable-000028-Filter.db
+Metadata: data/sstable/1/28/usertable-000028-Metadata.db

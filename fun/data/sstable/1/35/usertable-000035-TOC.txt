@@ -1,0 +1,6 @@
+Generation: 35
+Data: data/sstable/1/35/usertable-000035-Data.db
+Index: data/sstable/1/35/usertable-000035-Index.db
+Summary: data/sstable/1/35/usertable-000035-Summary.db
+Filter: data/sstable/1/35/usertable-000035-Filter.db
+Metadata: data/sstable/1/35/usertable-000035-Metadata.db

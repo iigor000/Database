@@ -1,0 +1,6 @@
+Generation: 19
+Data: data/sstable/1/19/usertable-000019-Data.db
+Index: data/sstable/1/19/usertable-000019-Index.db
+Summary: data/sstable/1/19/usertable-000019-Summary.db
+Filter: data/sstable/1/19/usertable-000019-Filter.db
+Metadata: data/sstable/1/19/usertable-000019-Metadata.db
