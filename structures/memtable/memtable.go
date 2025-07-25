@@ -216,6 +216,38 @@ func (ms *Memtables) GetFirstEntry() adapter.MemtableEntry {
 	return adapter.MemtableEntry{}
 }
 
+func (m *Memtable) GetNextKey(key []byte) (adapter.MemtableEntry, bool) {
+	// Prolazimo kroz sve kljuceve i trazimo sledeci najmanji kljuc
+	minKey := key
+	for _, k := range m.Keys {
+		if bytes.Equal(k, key) {
+			minKey = k
+			entry, found := m.Search(minKey)
+			if found {
+				return *entry, true
+			}
+			break
+		}
+		if bytes.Equal(minKey, key) {
+			minKey = k
+		}
+		if bytes.Compare(k, key) > 0 {
+			if bytes.Compare(k, minKey) < 0 {
+				minKey = k
+			}
+		}
+
+	}
+	if bytes.Equal(minKey, key) {
+		return adapter.MemtableEntry{}, false // Nema sledecih unosa
+	}
+	entry, found := m.Search(minKey)
+	if found {
+		return *entry, true
+	}
+	return adapter.MemtableEntry{}, false
+}
+
 func (m *Memtable) GetFirstEntry() adapter.MemtableEntry {
 	if m.Size > 0 {
 		minKey := m.Keys[0]

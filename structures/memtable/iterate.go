@@ -91,11 +91,11 @@ func (m *Memtable) RangeIterate(startKey, endKey []byte) *MemtableRangeIterator 
 	if it == nil {
 		return nil
 	}
-	entry, ok := m.Search(startKey)
+	entry, ok := m.GetNextKey(startKey)
 	if !ok {
-		return nil
+		return nil // Nema unosa posle startKey
 	}
-	it.currentEntry = *entry
+	it.currentEntry = entry
 	return &MemtableRangeIterator{
 		memtableIterator: it,
 		startKey:         startKey,
@@ -235,7 +235,7 @@ func (ms *Memtables) PrefixIterate(prefix string) *PrefixIterator {
 	if len(ms.Memtables) == 0 {
 		return nil // Nema unosa u Memtables
 	}
-	iterators := make([]*MemtablePrefixIterator, len(ms.Memtables))
+	iterators := make([]*MemtablePrefixIterator, 0)
 	for _, memtable := range ms.Memtables {
 		it := memtable.PrefixIterate(prefix)
 		if it != nil {
@@ -248,17 +248,29 @@ func (ms *Memtables) PrefixIterate(prefix string) *PrefixIterator {
 	minKey := []byte{}
 	currentEntry := adapter.MemtableEntry{Key: nil}
 	for i := 0; i < len(iterators); i++ {
-		if iterators[i] != nil && iterators[i].memtableIterator.currentEntry.Key != nil {
-			if len(minKey) == 0 || bytes.Compare(iterators[i].memtableIterator.currentEntry.Key, minKey) < 0 {
-				minKey = iterators[i].memtableIterator.currentEntry.Key
-				currentEntry = iterators[i].memtableIterator.currentEntry
-			} else if bytes.Equal(iterators[i].memtableIterator.currentEntry.Key, minKey) {
-				if iterators[i].memtableIterator.currentEntry.Timestamp > currentEntry.Timestamp {
-					minKey = iterators[i].memtableIterator.currentEntry.Key
-					currentEntry = iterators[i].memtableIterator.currentEntry
-				}
+		if iterators[i] == nil {
+			continue // Nema unosa u ovom iteratoru
+		}
+		key := iterators[i].memtableIterator.currentEntry
+		if key.Key == nil {
+			continue // Nema unosa u ovom iteratoru
+		}
+
+		if len(minKey) == 0 {
+			minKey = key.Key
+			currentEntry = key
+		}
+		if bytes.Compare(key.Key, minKey) < 0 {
+			minKey = key.Key
+			currentEntry = key
+		}
+		if bytes.Equal(key.Key, minKey) {
+			if key.Timestamp > currentEntry.Timestamp {
+				minKey = key.Key
+				currentEntry = key
 			}
 		}
+
 	}
 	if len(minKey) == 0 {
 		return nil
@@ -295,7 +307,7 @@ func (pi *PrefixIterator) Next() (adapter.MemtableEntry, bool) {
 			continue
 		}
 		if key.Key == nil {
-			continue // Nema vise unosa u ovom iteratoru
+			continue
 		}
 		if bytes.Equal(pi.currentEntry.Key, minKey) {
 			minKey = key.Key
@@ -354,7 +366,7 @@ func (ms *Memtables) RangeIterate(startKey, endKey []byte) *RangeIterator {
 	if len(ms.Memtables) == 0 {
 		return nil // Nema unosa u Memtables
 	}
-	iterators := make([]*MemtableRangeIterator, len(ms.Memtables))
+	iterators := make([]*MemtableRangeIterator, 0)
 	for _, memtable := range ms.Memtables {
 		it := memtable.RangeIterate(startKey, endKey)
 		if it != nil {
@@ -367,10 +379,20 @@ func (ms *Memtables) RangeIterate(startKey, endKey []byte) *RangeIterator {
 	minKey := []byte{}
 	currentEntry := adapter.MemtableEntry{Key: nil}
 	for i := 0; i < len(iterators); i++ {
-		if iterators[i] != nil && iterators[i].memtableIterator.currentEntry.Key != nil {
-			if len(minKey) == 0 || bytes.Compare(iterators[i].memtableIterator.currentEntry.Key, minKey) < 0 {
+		if iterators[i] != nil {
+			if len(minKey) == 0 {
 				minKey = iterators[i].memtableIterator.currentEntry.Key
 				currentEntry = iterators[i].memtableIterator.currentEntry
+			}
+			if bytes.Compare(iterators[i].memtableIterator.currentEntry.Key, minKey) < 0 {
+				minKey = iterators[i].memtableIterator.currentEntry.Key
+				currentEntry = iterators[i].memtableIterator.currentEntry
+			}
+			if bytes.Equal(iterators[i].memtableIterator.currentEntry.Key, minKey) {
+				if iterators[i].memtableIterator.currentEntry.Timestamp > currentEntry.Timestamp {
+					minKey = iterators[i].memtableIterator.currentEntry.Key
+					currentEntry = iterators[i].memtableIterator.currentEntry
+				}
 			}
 		}
 	}
