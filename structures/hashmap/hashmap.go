@@ -26,6 +26,7 @@ func (h *HashMap) Search(key []byte) (*adapter.MemtableEntry, bool) {
 
 func (h *HashMap) Update(key []byte, value []byte, timestamp int64, tombstone bool) {
 	h.data[string(key)] = &adapter.MemtableEntry{
+		Key:       key,
 		Value:     value,
 		Timestamp: timestamp,
 		Tombstone: tombstone,

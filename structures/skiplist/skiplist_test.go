@@ -44,3 +44,115 @@ func TestList(t *testing.T) {
 		t.Error("Expected empty")
 	}
 }
+
+func TestBasicIterator(t *testing.T) {
+	s := MakeSkipList(3)
+	s.Create([]byte("key1"), []byte("one"), 0, false)
+	s.Create([]byte("key2"), []byte("two"), 0, false)
+	s.Create([]byte("key3"), []byte("three"), 0, false)
+
+	println("=== Testing Basic Iterator ===")
+	iter, err := s.NewIterator()
+	if err != nil {
+		t.Fatalf("Failed to create iterator: %v", err)
+	}
+
+	count := 0
+	for iter.Next() {
+		value := iter.Value()
+		if value != nil {
+			println("Key:", string(value.Key), "Value:", string(value.Value))
+			count++
+		} else {
+			println("Got nil value from iterator")
+		}
+	}
+	println("Total items found:", count)
+
+	if count != 3 {
+		t.Errorf("Expected 3 items, got %d", count)
+	}
+}
+
+func TestRangeIterator(t *testing.T) {
+	s := MakeSkipList(3)
+	s.Create([]byte("key1"), []byte("one"), 0, false)
+	s.Create([]byte("key2"), []byte("two"), 0, false)
+	s.Create([]byte("key3"), []byte("three"), 0, false)
+	s.Create([]byte("key4"), []byte("four"), 0, false)
+	s.Create([]byte("key5"), []byte("five"), 0, false)
+	s.Create([]byte("key6"), []byte("six"), 0, false)
+	s.Create([]byte("key7"), []byte("seven"), 0, false)
+	s.Create([]byte("key8"), []byte("eight"), 0, false)
+	s.Create([]byte("key9"), []byte("nine"), 0, false)
+	s.Create([]byte("key10"), []byte("ten"), 0, false)
+	s.Create([]byte("key11"), []byte("eleven"), 0, false)
+	s.Create([]byte("key12"), []byte("twelve"), 0, false)
+
+	// Pravimo range iterator od key3 do key9
+	iter, err := s.NewRangeIterator([]byte("key3"), []byte("key9"))
+	if err != nil {
+		t.Fatalf("Failed to create range iterator: %v", err)
+	}
+
+	// Ocekujemo da cemo naci ove vrednosti, tri nije u listi, jer pocinjemo petlju sa iter.Next()
+	expectedValues := []string{"four", "five", "six", "seven", "eight", "nine"}
+	i := 0
+	for iter.Next() {
+		value := iter.Value()
+		if value == nil {
+			t.Error("Expected non-nil value")
+			continue
+		}
+		if string(value.Value) != expectedValues[i] {
+			t.Errorf("Expected %s, got %s", expectedValues[i], value.Value)
+		}
+		i++
+	}
+
+	// Proveravamo da li je broj pronadjenih vrednosti jednak broju ocekivanih vrednosti
+	println("Total values found:", i)
+	if i != len(expectedValues) {
+		t.Errorf("Expected %d values, got %d", len(expectedValues), i)
+	}
+}
+
+func TestPrefixIterate(t *testing.T) {
+	s := MakeSkipList(3)
+	s.Create([]byte("key1"), []byte("one"), 0, false)
+	s.Create([]byte("key2"), []byte("two"), 0, false)
+	s.Create([]byte("key3"), []byte("three"), 0, false)
+
+	prefix := []byte("key")
+	prefixIter, err := s.NewPrefixIterator(prefix)
+	if err != nil {
+		t.Fatal("Failed to create prefix iterator")
+	}
+
+	// Ocekivane vrednosti, jedan nije u listi, jer pocinjemo petlju sa iter.Next()
+	count := 0
+	for prefixIter.Next() {
+		value := prefixIter.Value()
+		if value == nil {
+			t.Error("Expected non-nil value")
+			continue
+		}
+		switch count {
+		case 0:
+			if string(value.Value) != "two" {
+				t.Errorf("Expected 'two', got '%s'", value.Value)
+			}
+		case 1:
+			if string(value.Value) != "three" {
+				t.Errorf("Expected 'three', got '%s'", value.Value)
+			}
+		default:
+			t.Error("Unexpected extra iteration")
+		}
+		count++
+	}
+
+	if count != 2 {
+		t.Errorf("Expected 2 iterations, got %d", count)
+	}
+}
