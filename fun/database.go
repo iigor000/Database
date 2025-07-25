@@ -2,12 +2,14 @@ package fun
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/iigor000/database/config"
 	// "github.com/iigor000/database/structures/adapter"
 	"github.com/iigor000/database/structures/cache"
 	"github.com/iigor000/database/structures/compression"
+	writeaheadlog "github.com/iigor000/database/structures/writeAheadLog"
 
 	// "github.com/iigor000/database/structures/lsmtree"
 	"github.com/iigor000/database/structures/memtable"
@@ -15,19 +17,39 @@ import (
 	"github.com/iigor000/database/util"
 )
 
-//TODO: Dodati wal i kompresiju kad budu zavrseni
+//TODO: Dodati (wal) i kompresiju kad budu zavrseni
 
 type Database struct {
-	//wal
-	compression *compression.Dictionary
-	memtables   *memtable.Memtables
-	config      *config.Config
-	cache       *cache.Cache
-	username    string
+	wal            *writeaheadlog.WAL
+	compression    *compression.Dictionary
+	memtables      *memtable.Memtables
+	config         *config.Config
+	cache          *cache.Cache
+	username       string
+	lastFlushedGen int // poslednja generacija koja je flush-ovana na disk
 }
 
 func NewDatabase(config *config.Config, username string) (*Database, error) {
+	wal, err := writeaheadlog.SetOffWAL(config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize write-ahead log: %w", err)
+	}
+
+	//ucitaj wal u memtable
 	memtables := memtable.NewMemtables(config)
+	records, err := wal.ReadRecords()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read records from write-ahead log: %w", err)
+	}
+	for _, record := range records {
+		if record.Tombstone {
+			// Ako je tombstone, brisemo kljuc, ne treba nam u memtable
+			memtables.Delete(record.Key)
+		} else {
+			// Ako nije tombstone, dodajemo kljuc i vrednost u memtable
+			memtables.Update(record.Key, record.Value, record.Timestamp, false)
+		}
+	}
 	// TODO: Treba da se ucita BloomFilter i Summary iz SSTable-a
 	cache := cache.NewCache(config)
 	dict, err := compression.Read(config.Compression.DictionaryDir)
@@ -35,6 +57,7 @@ func NewDatabase(config *config.Config, username string) (*Database, error) {
 		return nil, err
 	}
 	return &Database{
+		wal:         wal,
 		memtables:   memtables,
 		config:      config,
 		cache:       cache,
@@ -43,8 +66,14 @@ func NewDatabase(config *config.Config, username string) (*Database, error) {
 	}, nil
 }
 
+func (db *Database) calculateLWM() int {
+	return db.lastFlushedGen
+	// ako imamo flushovane generacije npr 1 i 2, onda je lwm 1
+	// ostaje taj nivo dok se flush skroz ne zavrsi
+}
+
 func (db *Database) Put(key string, value []byte) error {
-	// Proveravamp da li po token bucketu korisnik moze da unese podatke
+	// Proveravamo da li po token bucketu korisnik moze da unese podatke
 	allow, err := CheckBucket(db)
 	if err != nil {
 		return err
@@ -63,7 +92,9 @@ func (db *Database) Put(key string, value []byte) error {
 
 func (db *Database) put(key string, value []byte) error {
 
-	// TODO: Staviti write ahead log zapis
+	if err := db.wal.Append([]byte(key), value, false); err != nil {
+		return fmt.Errorf("failed to append to write-ahead log: %w", err)
+	}
 
 	if db.compression == nil {
 		db.compression = compression.NewDictionary()
@@ -75,6 +106,11 @@ func (db *Database) put(key string, value []byte) error {
 		// Flush Memtable na disk
 		println("Flushing Memtable to disk...")
 		sstable.FlushSSTable(db.config, *db.memtables.Memtables[db.memtables.NumberOfMemtables-1], db.memtables.GenToFlush, db.compression)
+
+		db.lastFlushedGen = db.memtables.GenToFlush // azuriramo poslednju flushovanu generaciju
+		if err := db.wal.RemoveSegmentsUpTo(db.calculateLWM()); err != nil {
+			return fmt.Errorf("failed to remove write-ahead log segments up to lwm: %w", err)
+		}
 
 		// Proverava uslov za kompakciju i vrši kompakciju ako je potrebno (počinje proveru od prvog nivoa)
 		// lsmtree.Compact(db.config, 1)
@@ -194,6 +230,9 @@ func (db *Database) Delete(key string) error {
 func (db *Database) delete(key string) error {
 
 	// TODO: Napisati u wal da se brise entry
+	if err := db.wal.Append([]byte(key), nil, true); err != nil {
+		return fmt.Errorf("failed to write to write-ahead log: %w", err)
+	}
 
 	// Brisanje iz memtable-a
 	found := db.memtables.Delete([]byte(key))

@@ -361,43 +361,62 @@ func (w *WAL) ReadRecords() ([]*WALRecord, error) {
 // sto se tice samog lwm potrebno je da se dinamicki racuna tokom rada sistema
 // npr. nakon perzistiranja podataka u sstable/nakon brisanja podataka iz memtable, treba dodatno implementirati to
 func (w *WAL) RemoveSegmentsUpTo(lowWaterMark int) error {
+	// Filtriraj segmente: uvek zadrži aktivni, a od ostalih ukloni one sa brojem ≤ lowWaterMark
 	var segmentsToKeep []*WALSegment
-	var toDelete []*WALSegment
-
-	// 1. Podeli segmente na one koje cuvamo i koje brisemo
-	for _, segment := range w.segments {
-		if segment.segmentNumber >= lowWaterMark {
-			segmentsToKeep = append(segmentsToKeep, segment)
+	for _, seg := range w.segments {
+		if seg.isActive {
+			// Nikad ne briši aktivni segment
+			segmentsToKeep = append(segmentsToKeep, seg)
+		} else if seg.segmentNumber > lowWaterMark {
+			// Zadrži sve segmente iznad LWM
+			segmentsToKeep = append(segmentsToKeep, seg)
 		} else {
-			toDelete = append(toDelete, segment)
-		}
-	}
-
-	// 2. Obrisi sve koji su ispod lowWaterMark-a
-	for _, segment := range toDelete {
-		if err := os.Remove(segment.filePath); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("error removing segment %s: %v", segment.filePath, err)
-		}
-	}
-
-	// 3. Preimenuj preostale segmente da budu u kontinuitetu (npr. 0001, 0002, ...)
-	for i, segment := range segmentsToKeep {
-		oldPath := segment.filePath
-		newNumber := i + 1 // Segmenti pocinju od 1
-		newName := fmt.Sprintf("wal_%04d.log", newNumber)
-		newPath := filepath.Join(w.config.Wal.WalDirectory, newName)
-
-		// Ako broj nije isti, preimenuj fajl i azuriraj segment
-		if newNumber != segment.segmentNumber {
-			if err := os.Rename(oldPath, newPath); err != nil {
-				return fmt.Errorf("error renaming segment %d to %d: %v",
-					segment.segmentNumber, newNumber, err)
+			// Ukloni sve ostale
+			if err := os.Remove(seg.filePath); err != nil && !os.IsNotExist(err) {
+				return err
 			}
-			segment.filePath = newPath
-			segment.segmentNumber = newNumber
 		}
 	}
-	// 4. Azuriraj listu segmenata
+
+	// Normalizuj numeraciju (ponovno preimenuj fajlove u 0001, 0002, …)
+	for i, seg := range segmentsToKeep {
+		newNum := i + 1
+		if seg.segmentNumber == newNum {
+			continue
+		}
+		newPath := filepath.Join(w.config.Wal.WalDirectory, fmt.Sprintf("wal_%04d.log", newNum))
+		if err := os.Rename(seg.filePath, newPath); err != nil {
+			return err
+		}
+		seg.segmentNumber = newNum
+		seg.filePath = newPath
+	}
+
 	w.segments = segmentsToKeep
 	return nil
 }
+
+// // Funkcija koja cisti sve segmente osim aktivnog, koristi se za resetovanje wal-a nakon flush-a memtable-a
+// func (w *WAL) Clear() error {
+// 	if len(w.segments) == 0 {
+// 		return nil
+// 	}
+
+// 	// Obriši sve segmente osim aktivnog
+// 	for _, seg := range w.segments[:len(w.segments)-1] {
+// 		if err := os.Remove(seg.filePath); err != nil {
+// 			return err
+// 		}
+// 	}
+
+// 	// Resetuj aktivni segment
+// 	active := w.segments[len(w.segments)-1]
+// 	if err := os.Truncate(active.filePath, 0); err != nil {
+// 		return err
+// 	}
+// 	active.writtenBlocks = 0
+
+// 	// Ostavi samo aktivni segment
+// 	w.segments = []*WALSegment{active}
+// 	return nil
+// }
