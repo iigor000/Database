@@ -1,6 +1,7 @@
 package memtable
 
 import (
+	"bytes"
 	"fmt"
 
 	"github.com/iigor000/database/config"
@@ -41,12 +42,9 @@ func (m *Memtables) Update(key []byte, value []byte, timestamp int64, tombstone 
 
 	flushed := false
 	i := m.GetMemtableToChange()
-	println(i)
 	m.Memtables[i].Update(key, value, timestamp, tombstone)
 
 	if i == m.NumberOfMemtables-1 {
-		println("Last Memtable is being updated, checking if it needs to be flushed...")
-		println("Memtable size:", m.Memtables[i].Size, "Capacity:", m.Memtables[i].Capacity)
 		if m.Memtables[i].Size >= m.Memtables[i].Capacity {
 			// Ako je poslednji Memtable pun, onda ga flush-ujemo na disk
 			//m.memtables[0].FlushToDisk(m.conf, m.genToFlush)
@@ -153,6 +151,98 @@ func (m *Memtable) Print() {
 	}
 }
 
+func (m *Memtables) GetEntryWithPrefix(prefix string, memtableIndex int, entryIndex int) (adapter.MemtableEntry, int, int) {
+	// Prolazimo kroz sve Memtable i trazimo
+	for i := memtableIndex; i < m.NumberOfMemtables; i++ {
+		memtable := m.Memtables[i]
+		// Proveravamo da li posmatrani kljuc ima prefiks
+		for j := entryIndex; j < len(memtable.Keys); j++ {
+			key := memtable.Keys[j]
+			if bytes.HasPrefix(key, []byte(prefix)) {
+				entry, found := memtable.Search(key)
+				if found && !entry.Tombstone {
+					return *entry, i, j // Vracamo entry, indeks Memtable-a i indeks kljuca
+				}
+			}
+		}
+	}
+	return adapter.MemtableEntry{}, -1, -1 // Ako nismo nasli kljuc, vracamo nil i -1
+}
+
+func (m *Memtables) GetEntry(memtableIndex int, entryIndex int) (*adapter.MemtableEntry, bool) {
+	if memtableIndex < 0 || memtableIndex >= len(m.Memtables) {
+		return nil, false
+	}
+	memtable := m.Memtables[memtableIndex]
+	if entryIndex < 0 || entryIndex >= len(memtable.Keys) {
+		return nil, false
+	}
+	key := memtable.Keys[entryIndex]
+	entry, found := memtable.Search(key)
+	if !found {
+		return nil, false
+	}
+	return entry, true
+}
+
+func (ms *Memtables) GetFirstEntry() adapter.MemtableEntry {
+	if len(ms.Memtables) > 0 {
+		for _, memtable := range ms.Memtables {
+			if memtable.Size > 0 {
+				firstKey := memtable.Keys[0]
+				entry, _ := memtable.Search(firstKey)
+				return *entry
+			}
+		}
+	}
+	return adapter.MemtableEntry{}
+}
+
+func (m *Memtable) GetFirstEntry() adapter.MemtableEntry {
+	if m.Size > 0 {
+		minKey := m.Keys[0]
+		for _, key := range m.Keys {
+			if bytes.Compare(key, minKey) < 0 {
+				minKey = key
+			}
+		}
+		entry, found := m.Search(minKey)
+		if found {
+			return *entry
+		}
+	}
+	return adapter.MemtableEntry{}
+}
+
+func (m *Memtable) GetNextEntry(key []byte) (adapter.MemtableEntry, bool) {
+	// Prolazimo kroz sve kljuceve i trazimo sledeci najmanji kljuc
+	minKey := key
+	for _, k := range m.Keys {
+		if bytes.Compare(k, key) > 0 {
+			if bytes.Equal(minKey, key) {
+				minKey = k
+			} else {
+				if bytes.Compare(k, minKey) < 0 {
+					minKey = k
+				}
+			}
+
+		}
+	}
+	if bytes.Equal(minKey, key) {
+		return adapter.MemtableEntry{}, false // Nema sledecih unosa
+	}
+	entry, found := m.Search(minKey)
+	if found {
+		return *entry, true
+	}
+	return adapter.MemtableEntry{}, false
+}
+
+func (m *Memtable) GetSize() int {
+	return m.Size
+}
+
 func (m *Memtable) GetAllEntries() []adapter.MemtableEntry {
 	entries := make([]adapter.MemtableEntry, 0, m.Size)
 	for _, key := range m.Keys {
@@ -168,7 +258,6 @@ func (m *Memtables) GetMemtableToChange() int {
 
 	for i := 0; i < m.NumberOfMemtables; i++ {
 		memtable := m.Memtables[i]
-		println(memtable.Capacity)
 
 		if memtable.Size < memtable.Capacity {
 			return i

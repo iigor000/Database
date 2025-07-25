@@ -174,3 +174,47 @@ func TestMemtables(t *testing.T) {
 	}
 
 }
+
+func TestMemtableIterate(t *testing.T) {
+	conf := &config.Config{
+		Memtable: config.MemtableConfig{
+			NumberOfMemtables: 4,
+			NumberOfEntries:   5,
+			Structure:         "skiplist",
+		},
+		Skiplist: config.SkiplistConfig{
+			MaxHeight: 16,
+		},
+		Block: config.BlockConfig{
+			BlockSize: 4096,
+		},
+	}
+
+	memtables := NewMemtables(conf)
+	memtables.Update([]byte("key1"), []byte("value1"), 1, false)
+	memtables.Update([]byte("key2"), []byte("value2"), 2, false)
+	memtables.Update([]byte("key3"), []byte("value3"), 3, false)
+	memtables.Update([]byte("key4"), []byte("value4"), 4, false)
+	memtables.Update([]byte("key5"), []byte("value5"), 5, false)
+	memtables.Update([]byte("key6"), []byte("value6"), 6, false)
+	memtables.Update([]byte("key7"), []byte("value7"), 7, false)
+	memtables.Update([]byte("key8"), []byte("value8"), 8, false)
+	memtables.Update([]byte("key9"), []byte("value9"), 9, false)
+	memtables.Update([]byte("key10"), []byte("value10"), 10, false)
+
+	for i := 0; i < conf.Memtable.NumberOfMemtables; i++ {
+		iterator := memtables.Memtables[i].NewMemtableIterator()
+		if iterator == nil {
+			break
+		}
+		// Iterate through all entries
+		for {
+			entry, ok := iterator.Next()
+			if !ok {
+				break
+			}
+			fmt.Printf("Key: %s, Value: %s\n", entry.Key, entry.Value)
+		}
+
+	}
+}
