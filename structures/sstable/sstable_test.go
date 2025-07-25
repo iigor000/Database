@@ -76,7 +76,7 @@ func TestSSTableRead(t *testing.T) {
 	conf := &config.Config{
 		SSTable: config.SSTableConfig{
 			SstableDirectory: "./sstable_test",
-			UseCompression:   false,
+			UseCompression:   true,
 			SummaryLevel:     2,
 			SingleFile:       true,
 		},
@@ -164,9 +164,9 @@ func TestSSTableIterate(t *testing.T) {
 	conf := &config.Config{
 		SSTable: config.SSTableConfig{
 			SstableDirectory: "./sstable_test",
-			UseCompression:   false,
+			UseCompression:   true,
 			SummaryLevel:     2,
-			SingleFile:       false,
+			SingleFile:       true,
 		},
 		Memtable: config.MemtableConfig{
 			NumberOfMemtables: 1,
@@ -294,7 +294,7 @@ func TestSSTableValidate(t *testing.T) {
 			SstableDirectory: "./sstable_test",
 			UseCompression:   true,
 			SummaryLevel:     2,
-			SingleFile:       false,
+			SingleFile:       true,
 		},
 		Memtable: config.MemtableConfig{
 			NumberOfMemtables: 1,
@@ -310,6 +310,7 @@ func TestSSTableValidate(t *testing.T) {
 	}
 
 	dict, err := compression.Read("./sstable_test/dict_test.db")
+	dict.Print()
 	if err != nil {
 		t.Fatalf("Failed to read dictionary: %v", err)
 	}

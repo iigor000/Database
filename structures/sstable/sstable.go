@@ -147,7 +147,7 @@ func (sstable *SSTable) WriteSingleFile(path string, conf *config.Config) error 
 	}
 	serializedToc := []byte{}
 	for key, offset := range offsets {
-		println("Writing TOC entry:", key, "at offset", offset)
+		//println("Writing TOC entry:", key, "at offset", offset)
 		serializedToc = append(serializedToc, []byte(fmt.Sprintf("%s: %d\n", key, offset))...)
 	}
 	err = bm.WriteBlock(path, 0, serializedToc)
@@ -345,22 +345,22 @@ func ReadOffsetsFromFile(path string, conf *config.Config) (map[string]int64, er
 func (sstable *SSTable) ReadFilterMetaCompression(path string, offsets map[string]int64, readMerkle bool, conf *config.Config) error {
 	//Citanje Compression info
 	bm := block_organization.NewBlockManager(conf)
-	block, err := bm.ReadBlock(path, int(offsets["Compression"]/int64(conf.Memtable.NumberOfMemtables)))
+	block, err := bm.ReadBlock(path, int(offsets["Compression"]/int64(conf.Block.BlockSize)))
 	if err != nil {
 		return fmt.Errorf("error reading compression info from file: %w", err)
 	}
-	UsingCompression := string(block) == "Using compression"
+	str_block := strings.TrimRight(string(block), "\x00")
+	UsingCompression := str_block == "Using compression"
 	sstable.UseCompression = UsingCompression
-
 	// Citanje Bloom filtera
-	block, err = bm.ReadBlock(path, int(offsets["Filter"]/int64(conf.Memtable.NumberOfMemtables)))
+	block, err = bm.ReadBlock(path, int(offsets["Filter"]/int64(conf.Block.BlockSize)))
 	if err != nil {
 		return fmt.Errorf("error reading Bloom filter from file: %w", err)
 	}
 	sstable.Filter = bloomfilter.Deserialize(block)[0]
 	if readMerkle {
 		// Citanje Merkle stabla
-		block, err = bm.ReadBlock(path, int(offsets["Metadata"]/int64(conf.Memtable.NumberOfMemtables)))
+		block, err = bm.ReadBlock(path, int(offsets["Metadata"]/int64(conf.Block.BlockSize)))
 		if err != nil {
 			return fmt.Errorf("error reading Merkle tree from file: %w", err)
 		}
@@ -406,11 +406,6 @@ func NewSSTable(conf *config.Config, level int, gen int, dict *compression.Dicti
 			},
 		}
 		sstable.FilterOffset = offsets["Filter"]
-		println("Offsets read from file:")
-		for key, offset := range offsets {
-			println("Offset for", key, "is", offset)
-		}
-
 		// Citamo compression info, bloom filter i Merkle tree
 		err = sstable.ReadFilterMetaCompression(path, offsets, true, conf)
 		if err != nil {
@@ -830,17 +825,18 @@ func (sstable *SSTable) ValidateMerkleTree(conf *config.Config, dict *compressio
 	if sstable.SingleFile {
 		filename = CreateFileName(sstable.Dir, sstable.Gen, "SSTable", "db")
 	}
-	dict1 := dict
 	if !sstable.UseCompression {
-		dict1 = nil
+		dict = nil
 	}
-	db, err := ReadData(filename, conf, dict1, sstable.Data.DataFile.Offset, sstable.Index.IndexFile.Offset)
+
+	db, err := ReadData(filename, conf, dict, sstable.Data.DataFile.Offset, sstable.Index.IndexFile.Offset)
 	if err != nil {
 		return false, fmt.Errorf("error reading data: %w", err)
 	}
 	data := make([][]byte, len(db.Records))
 	for i, record := range db.Records {
-		data[i] = record.Key
+		data[i] = make([]byte, len(record.Key))
+		copy(data[i], record.Key)
 		if !record.Tombstone {
 			data[i] = append(data[i], record.Value...)
 		}
