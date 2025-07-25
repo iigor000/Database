@@ -430,3 +430,134 @@ func DeserializeWALRecord(data []byte) (*WALRecord, error) {
 
 	return record, nil
 }
+
+// func TestWAL_Clear(t *testing.T) {
+// 	tempDir, err := os.MkdirTemp("", "wal_clear_test")
+// 	if err != nil {
+// 		t.Fatal(err)
+// 	}
+// 	defer os.RemoveAll(tempDir)
+
+// 	cfg := &config.Config{
+// 		Block: config.BlockConfig{
+// 			BlockSize: 256,
+// 		},
+// 		Cache: config.CacheConfig{
+// 			Capacity: 10,
+// 		},
+// 		Wal: config.WalConfig{
+// 			WalDirectory:   tempDir,
+// 			WalSegmentSize: 3, // Small segment size for testing
+// 		},
+// 	}
+
+// 	// Test Case 1: Clear WAL with multiple segments
+// 	t.Run("multiple segments", func(t *testing.T) {
+// 		wal, err := SetOffWAL(cfg)
+// 		if err != nil {
+// 			t.Fatalf("Failed to initialize WAL: %v", err)
+// 		}
+
+// 		// Add records to create multiple segments
+// 		for i := 0; i < 5; i++ {
+// 			key := []byte(fmt.Sprintf("key%d", i))
+// 			value := []byte(fmt.Sprintf("value%d", i))
+// 			if err := wal.Append(key, value, false); err != nil {
+// 				t.Fatalf("Append failed: %v", err)
+// 			}
+// 		}
+
+// 		if len(wal.segments) < 2 {
+// 			t.Fatalf("Expected at least 2 segments, got %d", len(wal.segments))
+// 		}
+
+// 		// Clear the WAL
+// 		if err := wal.Clear(); err != nil {
+// 			t.Fatalf("Clear failed: %v", err)
+// 		}
+
+// 		// Verify results
+// 		if len(wal.segments) != 1 {
+// 			t.Errorf("Expected 1 segment after clear, got %d", len(wal.segments))
+// 		}
+
+// 		activeSegment := wal.segments[0]
+// 		if activeSegment.writtenBlocks != 0 {
+// 			t.Errorf("Expected active segment to have 0 blocks, got %d", activeSegment.writtenBlocks)
+// 		}
+
+// 		fileInfo, err := os.Stat(activeSegment.filePath)
+// 		if err != nil {
+// 			t.Fatalf("Error checking active segment file: %v", err)
+// 		}
+// 		if fileInfo.Size() != 0 {
+// 			t.Errorf("Expected active segment file to be empty, got size %d", fileInfo.Size())
+// 		}
+
+// 		// Verify other segments were deleted
+// 		files, err := os.ReadDir(tempDir)
+// 		if err != nil {
+// 			t.Fatalf("Error reading wal directory: %v", err)
+// 		}
+// 		if len(files) != 1 {
+// 			t.Errorf("Expected 1 file in wal directory, got %d", len(files))
+// 		}
+// 	})
+
+// 	// Test Case 2: Clear empty WAL
+// 	t.Run("empty wal", func(t *testing.T) {
+// 		wal, err := SetOffWAL(cfg)
+// 		if err != nil {
+// 			t.Fatalf("Failed to initialize WAL: %v", err)
+// 		}
+
+// 		if err := wal.Clear(); err != nil {
+// 			t.Fatalf("Clear failed: %v", err)
+// 		}
+
+// 		if len(wal.segments) != 1 {
+// 			t.Errorf("Expected 1 segment after clear, got %d", len(wal.segments))
+// 		}
+// 	})
+
+// 	// Test Case 3: Verify records can be added after clear
+// 	t.Run("append after clear", func(t *testing.T) {
+// 		wal, err := SetOffWAL(cfg)
+// 		if err != nil {
+// 			t.Fatalf("Failed to initialize WAL: %v", err)
+// 		}
+
+// 		// Add some records
+// 		for i := 0; i < 2; i++ {
+// 			key := []byte(fmt.Sprintf("key%d", i))
+// 			value := []byte(fmt.Sprintf("value%d", i))
+// 			if err := wal.Append(key, value, false); err != nil {
+// 				t.Fatalf("Append failed: %v", err)
+// 			}
+// 		}
+
+// 		// Clear the WAL
+// 		if err := wal.Clear(); err != nil {
+// 			t.Fatalf("Clear failed: %v", err)
+// 		}
+
+// 		// Add new records
+// 		newKey := []byte("new_key")
+// 		newValue := []byte("new_value")
+// 		if err := wal.Append(newKey, newValue, false); err != nil {
+// 			t.Fatalf("Append after clear failed: %v", err)
+// 		}
+
+// 		// Verify only the new record exists
+// 		records, err := wal.ReadRecords()
+// 		if err != nil {
+// 			t.Fatalf("ReadRecords failed: %v", err)
+// 		}
+// 		if len(records) != 1 {
+// 			t.Fatalf("Expected 1 record after clear and append, got %d", len(records))
+// 		}
+// 		if string(records[0].Key) != "new_key" {
+// 			t.Errorf("Expected key 'new_key', got '%s'", records[0].Key)
+// 		}
+// 	})
+// }
