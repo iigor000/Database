@@ -3,6 +3,9 @@ package merkle
 import (
 	"fmt"
 	"testing"
+
+	"github.com/iigor000/database/config"
+	"github.com/iigor000/database/structures/block_organization"
 )
 
 func TestNewMerkleTree(t *testing.T) {
@@ -94,4 +97,41 @@ func TestDeserializeFromBinaryFile(t *testing.T) {
 	}
 	fmt.Println("Root hash: ", tree.MerkleRootHash.Hash)
 	fmt.Println("Deserialized root hash: ", deserializedTree.MerkleRootHash.Hash)
+}
+
+func TestWriteReadToFile(t *testing.T) {
+	conf := &config.Config{
+		Block: config.BlockConfig{
+			BlockSize: 4096,
+		},
+	}
+
+	data := [][]byte{
+		[]byte("data1"),
+		[]byte("data2"),
+	}
+	tree := NewMerkleTree(data)
+	if tree == nil {
+		t.Fatal("Merkle Tree is nil")
+	}
+	bytesToWrite, err := tree.Serialize()
+	if err != nil {
+		t.Fatal("Error serializing Merkle Tree")
+	}
+	bm := block_organization.NewBlockManager(conf)
+	_, err = bm.AppendBlock("merkletree.db", bytesToWrite)
+	if err != nil {
+		t.Fatal("Error writing to block manager")
+	}
+	block, err := bm.ReadBlock("merkletree.db", 0)
+	if err != nil {
+		t.Fatal("Error reading from block manager")
+	}
+	newTree, err := Deserialize(block)
+	if err != nil {
+		t.Fatal("Error deserializing block")
+	}
+	if tree.MerkleRootHash.Hash != newTree.MerkleRootHash.Hash {
+		t.Fatal("Root hashes are not equal")
+	}
 }

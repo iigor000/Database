@@ -76,7 +76,7 @@ func TestSSTableRead(t *testing.T) {
 	conf := &config.Config{
 		SSTable: config.SSTableConfig{
 			SstableDirectory: "./sstable_test",
-			UseCompression:   true,
+			UseCompression:   false,
 			SummaryLevel:     2,
 			SingleFile:       true,
 		},
@@ -164,9 +164,9 @@ func TestSSTableIterate(t *testing.T) {
 	conf := &config.Config{
 		SSTable: config.SSTableConfig{
 			SstableDirectory: "./sstable_test",
-			UseCompression:   true,
+			UseCompression:   false,
 			SummaryLevel:     2,
-			SingleFile:       true,
+			SingleFile:       false,
 		},
 		Memtable: config.MemtableConfig{
 			NumberOfMemtables: 1,
@@ -286,4 +286,43 @@ func TestSSTableScan(t *testing.T) {
 	for _, entry := range rangeResults {
 		println("Key:", string(entry.Key), "Value:", string(entry.Value), "Timestamp:", entry.Timestamp, "Tombstone:", entry.Tombstone)
 	}
+}
+
+func TestSSTableValidate(t *testing.T) {
+	conf := &config.Config{
+		SSTable: config.SSTableConfig{
+			SstableDirectory: "./sstable_test",
+			UseCompression:   true,
+			SummaryLevel:     2,
+			SingleFile:       false,
+		},
+		Memtable: config.MemtableConfig{
+			NumberOfMemtables: 1,
+			NumberOfEntries:   5,
+			Structure:         "skiplist",
+		},
+		Skiplist: config.SkiplistConfig{
+			MaxHeight: 16,
+		},
+		Block: config.BlockConfig{
+			BlockSize: 4096,
+		},
+	}
+
+	dict, err := compression.Read("./sstable_test/dict_test.db")
+	if err != nil {
+		t.Fatalf("Failed to read dictionary: %v", err)
+	}
+	sstable, err := StartSSTable(1, 1, conf, dict)
+	if err != nil {
+		t.Fatalf("Failed to start SSTable: %v", err)
+	}
+	changed, err := sstable.ValidateMerkleTree(conf, dict)
+	if err != nil {
+		t.Fatalf("SSTable validation failed: %v", err)
+	}
+	if changed {
+		t.Fatal("SSTable validation returned false")
+	}
+	println("SSTable validation passed successfully")
 }

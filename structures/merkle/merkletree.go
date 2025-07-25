@@ -1,7 +1,9 @@
 package merkle
 
 import (
+	"bytes"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/gob"
 	"errors"
 	"io"
@@ -171,4 +173,54 @@ func BFS(merkletree *MerkleTree) []Node {
 		}
 	}
 	return queue
+}
+
+// Serijalizacija Merkle stabla u bajt niz bez encoder biblioteke
+// Upisuju se listovi Merkle stabla u bajt niz
+func (t *MerkleTree) Serialize() ([]byte, error) {
+	var buf bytes.Buffer
+	if err := binary.Write(&buf, binary.LittleEndian, t.MerkleRootHash); err != nil {
+		return nil, err
+	}
+	serializedNodes := BFS(t)
+	for _, node := range serializedNodes {
+		if err := binary.Write(&buf, binary.LittleEndian, node.Hash); err != nil {
+			return nil, err
+		}
+	}
+	return buf.Bytes(), nil
+}
+
+// Deserijalizacija Merkle stabla iz bajt niza
+func Deserialize(data []byte) (*MerkleTree, error) {
+	var merkleRootHash HashValue
+	buf := bytes.NewBuffer(data)
+	if err := binary.Read(buf, binary.LittleEndian, &merkleRootHash); err != nil {
+		return nil, err
+	}
+
+	nodes := []Node{}
+	for buf.Len() > 0 {
+		var nodeHash HashValue
+		if err := binary.Read(buf, binary.LittleEndian, &nodeHash); err != nil {
+			return nil, err
+		}
+		nodes = append(nodes, Node{Hash: nodeHash})
+	}
+
+	if len(nodes) == 0 {
+		return nil, errors.New("invalid data")
+	}
+
+	for i := range nodes {
+		if i*2+1 < len(nodes) {
+			nodes[i].Left = &nodes[i*2+1]
+		}
+		if i*2+2 < len(nodes) {
+			nodes[i].Right = &nodes[i*2+2]
+		}
+	}
+
+	root := &nodes[0]
+	return &MerkleTree{Root: root, MerkleRootHash: merkleRootHash}, nil
 }
