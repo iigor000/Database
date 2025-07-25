@@ -45,7 +45,7 @@ func MakeSkipList(maxHeight int) *SkipList {
 		node = &newNode
 	}
 
-	return &SkipList{maxHeight: maxHeight, root: &root, size: maxHeight}
+	return &SkipList{maxHeight: maxHeight, root: &root, size: 0}
 }
 
 func (s *SkipList) search(value []byte) []byte {
@@ -157,11 +157,12 @@ func (s *SkipList) Create(key []byte, value []byte, timestamp int64, tombstone b
 	}
 	serialized := serializeEntry(entry)
 	s.Add(key, serialized)
+	s.size++
 }
 
 func (s *SkipList) Search(key []byte) (*memtable.MemtableEntry, bool) {
 	value := s.search(key)
-	//fmt.Println("Search result:", value)
+
 	if value == nil {
 		return nil, false
 	}
@@ -245,4 +246,8 @@ func (s *SkipList) Clear() {
 	}
 	s.root = &root
 	s.size = s.maxHeight
+}
+
+func (s *SkipList) isEmpty() bool {
+	return s.size == 0
 }
