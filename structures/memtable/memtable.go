@@ -190,11 +190,21 @@ func (ms *Memtables) GetFirstEntry() adapter.MemtableEntry {
 	if len(ms.Memtables) > 0 {
 		minKey := ms.Memtables[0].Keys[0]
 		memIndex := 0
+		e, _ := ms.Memtables[0].Search(minKey)
+		timestamp := e.Timestamp
 		for i, memtable := range ms.Memtables {
 			for _, key := range memtable.Keys {
 				if bytes.Compare(key, minKey) < 0 {
 					minKey = key
 					memIndex = i
+					timestamp = e.Timestamp
+				} else if bytes.Equal(key, minKey) {
+					e1, _ := memtable.Search(key)
+					if e1.Timestamp > timestamp {
+						minKey = key
+						memIndex = i
+						timestamp = e1.Timestamp
+					}
 				}
 			}
 		}

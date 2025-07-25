@@ -185,8 +185,13 @@ func (mi *MemtablesIterator) Next() (adapter.MemtableEntry, bool) {
 			minKey = key.Key
 			iIndex = i
 			newEntry = key
+		} else if bytes.Equal(key.Key, minKey) {
+			if key.Timestamp > newEntry.Timestamp {
+				minKey = key.Key
+				iIndex = i
+				newEntry = key
+			}
 		}
-
 	}
 	if iIndex == -1 {
 		if mi != nil {
@@ -234,7 +239,6 @@ func (ms *Memtables) PrefixIterate(prefix string) *PrefixIterator {
 	for _, memtable := range ms.Memtables {
 		it := memtable.PrefixIterate(prefix)
 		if it != nil {
-
 			iterators = append(iterators, it)
 		}
 	}
@@ -248,6 +252,11 @@ func (ms *Memtables) PrefixIterate(prefix string) *PrefixIterator {
 			if len(minKey) == 0 || bytes.Compare(iterators[i].memtableIterator.currentEntry.Key, minKey) < 0 {
 				minKey = iterators[i].memtableIterator.currentEntry.Key
 				currentEntry = iterators[i].memtableIterator.currentEntry
+			} else if bytes.Equal(iterators[i].memtableIterator.currentEntry.Key, minKey) {
+				if iterators[i].memtableIterator.currentEntry.Timestamp > currentEntry.Timestamp {
+					minKey = iterators[i].memtableIterator.currentEntry.Key
+					currentEntry = iterators[i].memtableIterator.currentEntry
+				}
 			}
 		}
 	}
@@ -297,6 +306,12 @@ func (pi *PrefixIterator) Next() (adapter.MemtableEntry, bool) {
 			minKey = key.Key
 			iIndex = i
 			newEntry = key
+		} else if bytes.Equal(key.Key, minKey) {
+			if key.Timestamp > newEntry.Timestamp {
+				minKey = key.Key
+				iIndex = i
+				newEntry = key
+			}
 		}
 	}
 	if iIndex == -1 {
@@ -401,11 +416,17 @@ func (ri *RangeIterator) Next() (adapter.MemtableEntry, bool) {
 			iIndex = i
 			newEntry = key
 		}
-		println("Key:", string(key.Key), "MinKey:", string(minKey))
+
 		if bytes.Compare(iterator.memtableIterator.currentEntry.Key, minKey) < 0 {
 			minKey = key.Key
 			iIndex = i
 			newEntry = key
+		} else if bytes.Equal(key.Key, minKey) {
+			if key.Timestamp > newEntry.Timestamp {
+				minKey = key.Key
+				iIndex = i
+				newEntry = key
+			}
 		}
 	}
 	if iIndex == -1 {

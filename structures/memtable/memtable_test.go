@@ -273,8 +273,8 @@ func TestMemtablesIterator(t *testing.T) {
 	memtables.Update([]byte("key6"), []byte("value6"), 6, false)
 	memtables.Update([]byte("key7"), []byte("value7"), 7, false)
 	memtables.Update([]byte("key8"), []byte("value8"), 8, false)
-	memtables.Update([]byte("key9"), []byte("value9"), 9, false)
-	memtables.Update([]byte("key10"), []byte("value10"), 10, false)
+	memtables.Update([]byte("key2"), []byte("value9"), 9, false)
+	memtables.Update([]byte("key1"), []byte("value10"), 10, false)
 	println("Memtables after updates:")
 	iter := memtables.NewMemtablesIterator()
 

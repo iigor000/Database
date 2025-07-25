@@ -136,8 +136,7 @@ func (db *Data) WriteData(path string, conf *config.Config, dict *compression.Di
 			return db, fmt.Errorf("error writing data record to file %s: %w", path, err)
 		}
 		db.Records[rec].Offset = bn * conf.Block.BlockSize // Racunamo ofset kao broj bloka pomnozen sa velicinom bloka
-		println(bn)
-		println("Record written at offset:", db.Records[rec].Offset)
+
 		rec++
 		db.DataFile.SizeOnDisk = int64(bn * conf.Block.BlockSize)
 	}
