@@ -1,0 +1,6 @@
+Generation: 17
+Data: data/sstable/1/17/usertable-000017-Data.db
+Index: data/sstable/1/17/usertable-000017-Index.db
+Summary: data/sstable/1/17/usertable-000017-Summary.db
+Filter: data/sstable/1/17/usertable-000017-Filter.db
+Metadata: data/sstable/1/17/usertable-000017-Metadata.db

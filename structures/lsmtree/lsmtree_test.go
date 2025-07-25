@@ -14,8 +14,7 @@ func TestLSMTree_PutGetDelete(t *testing.T) {
 
 	cfg := &config.Config{
 		Block: config.BlockConfig{
-			BlockSize:     4096,
-			CacheCapacity: 100,
+			BlockSize: 4096,
 		},
 		Cache: config.CacheConfig{
 			Capacity: 10,
