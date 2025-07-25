@@ -397,3 +397,240 @@ func TestUpdate(t *testing.T) {
 		t.Error("Entry should be tombstoned")
 	}
 }
+
+func TestBTreeIterator(t *testing.T) {
+	t.Run("EmptyTree", func(t *testing.T) {
+		tree := NewBTree(2)
+		_, err := tree.NewIterator()
+		if err == nil {
+			t.Error("Expected error for empty tree")
+		}
+	})
+
+	t.Run("FullIteration", func(t *testing.T) {
+		tree := NewBTree(2)
+		entries := []struct {
+			key   []byte
+			value []byte
+		}{
+			{[]byte("d"), []byte("delta")},
+			{[]byte("b"), []byte("bravo")},
+			{[]byte("f"), []byte("foxtrot")},
+			{[]byte("a"), []byte("alpha")},
+			{[]byte("c"), []byte("charlie")},
+			{[]byte("e"), []byte("echo")},
+		}
+
+		// Dodaj u neuredjenom redosledu
+		for _, entry := range entries {
+			tree.Insert(entry.key, entry.value)
+		}
+
+		iter, err := tree.NewIterator()
+		if err != nil {
+			t.Fatalf("Failed to create iterator: %v", err)
+		}
+
+		expectedOrder := []string{"a", "b", "c", "d", "e", "f"}
+		index := 0
+
+		for iter.Next() {
+			if index >= len(expectedOrder) {
+				t.Error("Iterator returned more items than expected")
+				break
+			}
+
+			key, _ := iter.Value()
+			if string(key) != expectedOrder[index] {
+				t.Errorf("Expected key %s, got %s", expectedOrder[index], key)
+			}
+			index++
+		}
+
+		if index != len(expectedOrder) {
+			t.Errorf("Expected %d items, got %d", len(expectedOrder), index)
+		}
+	})
+
+	t.Run("RangeIteration", func(t *testing.T) {
+		tree := NewBTree(2)
+		entries := []struct {
+			key   []byte
+			value []byte
+		}{
+			{[]byte("apple"), []byte("fruit")},
+			{[]byte("banana"), []byte("fruit")},
+			{[]byte("carrot"), []byte("vegetable")},
+			{[]byte("date"), []byte("fruit")},
+			{[]byte("eggplant"), []byte("vegetable")},
+			{[]byte("fig"), []byte("fruit")},
+		}
+
+		for _, entry := range entries {
+			tree.Insert(entry.key, entry.value)
+		}
+
+		// Test range od "banana" do "eggplant" (ukljucujuci)
+		iter, err := tree.NewRangeIterator([]byte("banana"), []byte("eggplant"))
+		if err != nil {
+			t.Fatalf("Failed to create range iterator: %v", err)
+		}
+
+		expectedOrder := []string{"banana", "carrot", "date", "eggplant"}
+		index := 0
+
+		for iter.Next() {
+			if index >= len(expectedOrder) {
+				t.Error("Range iterator returned more items than expected")
+				break
+			}
+
+			key, _ := iter.Value()
+			if string(key) != expectedOrder[index] {
+				t.Errorf("Expected key %s, got %s", expectedOrder[index], key)
+			}
+			index++
+		}
+
+		if index != len(expectedOrder) {
+			t.Errorf("Expected %d items in range, got %d", len(expectedOrder), index)
+		}
+
+		// Test prazan range
+		emptyIter, err := tree.NewRangeIterator([]byte("mango"), []byte("orange"))
+		if err != nil {
+			t.Fatalf("Failed to create empty range iterator: %v", err)
+		}
+
+		if emptyIter.Next() {
+			t.Error("Expected empty range iterator to return false immediately")
+		}
+	})
+
+	t.Run("PrefixIteration", func(t *testing.T) {
+		tree := NewBTree(2)
+		entries := []struct {
+			key   []byte
+			value []byte
+		}{
+			{[]byte("apple"), []byte("fruit")},
+			{[]byte("apricot"), []byte("fruit")},
+			{[]byte("banana"), []byte("fruit")},
+			{[]byte("blueberry"), []byte("fruit")},
+			{[]byte("blackberry"), []byte("fruit")},
+			{[]byte("cherry"), []byte("fruit")},
+		}
+
+		for _, entry := range entries {
+			tree.Insert(entry.key, entry.value)
+		}
+
+		// Test prefix "b"
+		iter, err := tree.NewPrefixIterator([]byte("b"))
+		if err != nil {
+			t.Fatalf("Failed to create prefix iterator: %v", err)
+		}
+
+		expectedOrder := []string{"banana", "blackberry", "blueberry"}
+		index := 0
+
+		for iter.Next() {
+			if index >= len(expectedOrder) {
+				t.Error("Prefix iterator returned more items than expected")
+				break
+			}
+
+			key, _ := iter.Value()
+			if string(key) != expectedOrder[index] {
+				t.Errorf("Expected key %s, got %s", expectedOrder[index], key)
+			}
+			index++
+		}
+
+		if index != len(expectedOrder) {
+			t.Errorf("Expected %d items with prefix, got %d", len(expectedOrder), index)
+		}
+
+	})
+
+	t.Run("ConcurrentModification", func(t *testing.T) {
+		tree := NewBTree(2)
+		tree.Insert([]byte("a"), []byte("1"))
+		tree.Insert([]byte("b"), []byte("2"))
+
+		iter, err := tree.NewIterator()
+		if err != nil {
+			t.Fatalf("Failed to create iterator: %v", err)
+		}
+
+		// modifikuj stablo tokom iteracije
+		tree.Insert([]byte("c"), []byte("3"))
+
+		count := 0
+		for iter.Next() {
+			count++
+			key, value := iter.Value()
+			fmt.Printf("Key: %s, Value: %s\n", key, value)
+		}
+
+		if count != 2 {
+			t.Errorf("Expected iterator to see 2 items, saw %d", count)
+		}
+
+		// New iterator treba da vidi sve
+		newIter, err := tree.NewIterator()
+		if err != nil {
+			t.Fatalf("Failed to create new iterator: %v", err)
+		}
+
+		newCount := 0
+		for newIter.Next() {
+			newCount++
+		}
+
+		if newCount != 3 {
+			t.Errorf("Expected new iterator to see 3 items, saw %d", newCount)
+		}
+	})
+
+	t.Run("EdgeCases", func(t *testing.T) {
+		tree := NewBTree(2)
+		tree.Insert([]byte("a"), []byte("1"))
+		tree.Insert([]byte("b"), []byte("2"))
+		tree.Insert([]byte("c"), []byte("3"))
+
+		// Test range gde je start==end
+		iter, err := tree.NewRangeIterator([]byte("b"), []byte("b"))
+		if err != nil {
+			t.Fatalf("Failed to create range iterator: %v", err)
+		}
+
+		if !iter.Next() {
+			t.Error("Expected to find single item in start==end range")
+		}
+
+		key, _ := iter.Value()
+		if string(key) != "b" {
+			t.Errorf("Expected key 'b', got %s", key)
+		}
+
+		if iter.Next() {
+			t.Error("Expected only one item in start==end range")
+		}
+
+		// Test prazan prefix
+		prefixIter, err := tree.NewPrefixIterator([]byte(""))
+		if err != nil {
+			t.Fatalf("Failed to create prefix iterator: %v", err)
+		}
+
+		prefixCount := 0
+		for prefixIter.Next() {
+			prefixCount++
+		}
+
+		if prefixCount != 3 {
+			t.Errorf("Expected empty prefix to match all items, got %d", prefixCount)
+		}
+	})
+}
