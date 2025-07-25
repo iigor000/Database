@@ -262,6 +262,45 @@ func (m *Memtable) GetAllEntries() []adapter.MemtableEntry {
 	return entries
 }
 
+func (m *Memtable) GetFirstEntryWithPrefix(prefix string) (adapter.MemtableEntry, bool) {
+	minKey := m.Keys[0]
+	for _, key := range m.Keys {
+		if bytes.HasPrefix(key, []byte(prefix)) {
+			if bytes.Compare(key, minKey) < 0 {
+				minKey = key
+			}
+		}
+	}
+	entry, found := m.Search(minKey)
+	if found {
+		return *entry, true
+	}
+	return adapter.MemtableEntry{}, false // Nema unosa sa datim prefiksom
+}
+
+func (m *Memtable) GetNextEntryWithPrefix(key []byte, prefix string) (adapter.MemtableEntry, bool) {
+	minKey := key
+	for _, k := range m.Keys {
+		if bytes.HasPrefix(k, []byte(prefix)) && bytes.Compare(k, key) > 0 {
+			if bytes.Equal(minKey, key) {
+				minKey = k
+			} else {
+				if bytes.Compare(k, minKey) < 0 {
+					minKey = k
+				}
+			}
+		}
+	}
+	if bytes.Equal(minKey, key) {
+		return adapter.MemtableEntry{}, false
+	}
+	entry, found := m.Search(minKey)
+	if found {
+		return *entry, true
+	}
+	return adapter.MemtableEntry{}, false
+}
+
 func (m *Memtables) GetMemtableToChange() int {
 
 	for i := 0; i < m.NumberOfMemtables; i++ {

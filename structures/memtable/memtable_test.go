@@ -217,6 +217,36 @@ func TestMemtableIterate(t *testing.T) {
 		}
 
 	}
+	for i := 0; i < conf.Memtable.NumberOfMemtables; i++ {
+		prefixIterator := memtables.Memtables[i].PrefixIterate("key1")
+		if prefixIterator == nil {
+			continue
+		}
+		fmt.Printf("Prefix iterator for Memtable %d:\n", i)
+		for {
+			entry, ok := prefixIterator.Next()
+			if !ok {
+				break
+			}
+			fmt.Printf("Key: %s, Value: %s\n", entry.Key, entry.Value)
+		}
+		prefixIterator.Stop()
+	}
+
+	rangeIterator := memtables.Memtables[0].RangeIterate([]byte("key3"), []byte("key8"))
+	if rangeIterator == nil {
+		return
+	}
+	fmt.Printf("Range iterator for Memtable %d:\n", 0)
+	for {
+		entry, ok := rangeIterator.Next()
+		if !ok {
+			break
+		}
+		fmt.Printf("Key: %s, Value: %s\n", entry.Key, entry.Value)
+	}
+	rangeIterator.Stop()
+
 }
 
 func TestMemtablesIterator(t *testing.T) {
@@ -240,8 +270,14 @@ func TestMemtablesIterator(t *testing.T) {
 	memtables.Update([]byte("key3"), []byte("value3"), 3, false)
 	memtables.Update([]byte("key4"), []byte("value4"), 4, false)
 	memtables.Update([]byte("key5"), []byte("value5"), 5, false)
-
+	memtables.Update([]byte("key6"), []byte("value6"), 6, false)
+	memtables.Update([]byte("key7"), []byte("value7"), 7, false)
+	memtables.Update([]byte("key8"), []byte("value8"), 8, false)
+	memtables.Update([]byte("key9"), []byte("value9"), 9, false)
+	memtables.Update([]byte("key10"), []byte("value10"), 10, false)
+	println("Memtables after updates:")
 	iter := memtables.NewMemtablesIterator()
+
 	if iter == nil {
 		t.Error("Expected MemtablesIterator to be created")
 		return
@@ -253,5 +289,31 @@ func TestMemtablesIterator(t *testing.T) {
 			break
 		}
 		fmt.Printf("Key: %s, Value: %s\n", entry.Key, entry.Value)
+
+	}
+
+	piter := memtables.PrefixIterate("key1")
+	if piter == nil {
+		t.Error("Expected MemtablePrefixIterator to be created")
+		return
+	}
+	for {
+		entry, ok := piter.Next()
+		if !ok {
+			break
+		}
+		fmt.Printf("Prefix Key: %s, Value: %s\n", entry.Key, entry.Value)
+	}
+	riter := memtables.RangeIterate([]byte("key3"), []byte("key8"))
+	if riter == nil {
+		t.Error("Expected MemtableRangeIterator to be created")
+		return
+	}
+	for {
+		entry, ok := riter.Next()
+		if !ok {
+			break
+		}
+		fmt.Printf("Range Key: %s, Value: %s\n", entry.Key, entry.Value)
 	}
 }
