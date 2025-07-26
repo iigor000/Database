@@ -101,7 +101,6 @@ func (dr *DataRecord) Serialize(dict *compression.Dictionary) ([]byte, error) {
 
 // WriteDataRecord upisuje DataRecord u fajl
 func (dr *DataRecord) WriteDataRecord(path string, dict *compression.Dictionary, bm *block_organization.BlockManager) (int, error) {
-
 	serialized_data, err := dr.Serialize(dict)
 	if err != nil {
 		return -1, fmt.Errorf("error serializing data record: %w", err)

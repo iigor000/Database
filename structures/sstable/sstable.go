@@ -384,6 +384,9 @@ func NewSSTable(conf *config.Config, level int, gen int, dict *compression.Dicti
 	// Proveravamo da li direktorijum postoji
 	//err := CreateDirectoryIfNotExists(dir)
 	//Ucitavamo offsete sa kraja fajla ako je SingleFile
+
+	fmt.Print("Reading SSTable from directory: ", dir, "\n")
+
 	if conf.SSTable.SingleFile {
 		path := CreateFileName(dir, gen, "SSTable", "db")
 		offsets, err := ReadOffsetsFromFile(path, conf)
@@ -507,32 +510,32 @@ func NewSSTable(conf *config.Config, level int, gen int, dict *compression.Dicti
 
 // WriteSSTable upisuje SSTable u fajl
 // Pomocna funkcija za LSM
-func WriteSSTable(sstable *SSTable, dir string, conf *config.Config) error {
+func WriteSSTable(sstable *SSTable, dir string, conf *config.Config) {
 	path := fmt.Sprintf("%s/%d", dir, sstable.Gen)
 	err := CreateDirectoryIfNotExists(path)
 	if err != nil {
-		return fmt.Errorf("error creating directory for SSTable: %w", err)
+		panic("Error creating directory for SSTable: " + err.Error())
 	}
 
 	// Write Data
 	dataPath := CreateFileName(path, sstable.Gen, "Data", "db")
 	_, err = sstable.Data.WriteData(dataPath, conf, sstable.CompressionKey)
 	if err != nil {
-		return fmt.Errorf("error writing data to file %s: %w", dataPath, err)
+		panic("Error writing data to file: " + err.Error())
 	}
 
 	// Write Index
 	indexPath := CreateFileName(path, sstable.Gen, "Index", "db")
 	err = sstable.Index.WriteIndex(indexPath, conf)
 	if err != nil {
-		return fmt.Errorf("error writing index to file %s: %w", indexPath, err)
+		panic("Error writing index to file: " + err.Error())
 	}
 
 	// Write Summary
 	summaryPath := CreateFileName(path, sstable.Gen, "Summary", "db")
 	err = sstable.Summary.WriteSummary(summaryPath, conf)
 	if err != nil {
-		return fmt.Errorf("error writing summary to file %s: %w", summaryPath, err)
+		panic("Error writing summary to file: " + err.Error())
 	}
 
 	// Write Bloom Filter
@@ -540,7 +543,7 @@ func WriteSSTable(sstable *SSTable, dir string, conf *config.Config) error {
 	bm := block_organization.NewBlockManager(conf)
 	_, err = bm.AppendBlock(filterPath, sstable.Filter.Serialize())
 	if err != nil {
-		return fmt.Errorf("error writing bloom filter to file %s: %w", filterPath, err)
+		panic("Error writing bloom filter to file: " + err.Error())
 	}
 
 	// Write Compression Dictionary
@@ -551,7 +554,7 @@ func WriteSSTable(sstable *SSTable, dir string, conf *config.Config) error {
 	metadataPath := CreateFileName(path, sstable.Gen, "Metadata", "db")
 	_, err = sstable.Metadata.SerializeToBinaryFile(metadataPath, 0)
 	if err != nil {
-		return fmt.Errorf("error writing Merkle tree to file %s: %w", metadataPath, err)
+		panic("Error writing Merkle tree to file: " + err.Error())
 	}
 	// Write TOC file
 	tocPath := CreateFileName(path, sstable.Gen, "TOC", "txt")
@@ -563,10 +566,8 @@ func WriteSSTable(sstable *SSTable, dir string, conf *config.Config) error {
 		CreateFileName(path, sstable.Gen, "Metadata", "db"))
 	err = WriteTxtToFile(tocPath, tocData)
 	if err != nil {
-		return fmt.Errorf("error writing TOC to file %s: %w", tocPath, err)
+		panic("Error writing TOC to file: " + err.Error())
 	}
-
-	return nil
 }
 
 // NewEmptySSTable kreira prazan SSTable
@@ -579,6 +580,7 @@ func NewEmptySSTable(conf *config.Config, level int, generation int) *SSTable {
 		Gen:            generation,
 		Level:          level,
 		UseCompression: conf.SSTable.UseCompression,
+		// TODO: jel mi njega uvek koristimo ili samo kada je flag True
 		CompressionKey: compression.NewDictionary(),
 	}
 	if sstable.UseCompression {
@@ -597,15 +599,15 @@ func (s *SSTable) Get(conf *config.Config, key []byte) (*DataRecord, error) {
 	}
 
 	// Ako Bloom filter sadrži ključ, proveri u summary i index
-	for _, summary := range s.Summary.Records {
-		if bytes.Compare(key, summary.FirstKey) < 0 {
-			continue // Ključ nije u ovom summary bloku
-		}
+	if bytes.Compare(key, s.Summary.FirstKey) < 0 || bytes.Compare(key, s.Summary.LastKey) > 0 {
+		return nil, nil // Ključ nije u ovom summary bloku
+	}
 
-		// Ako je ključ unutar opsega summary, proveri index
-		// indexOffset je offset u Index segmentu gde se nalazi ovaj summary
-		start := summary.IndexOffset
-		end := start + summary.NumberOfRecords
+	// Ako je ključ unutar opsega summary, proveri index
+	// indexOffset je offset u Index segmentu gde se nalazi ovaj summary
+	for _, rec := range s.Summary.Records {
+		start := rec.IndexOffset
+		end := start + rec.NumberOfRecords
 
 		indexBlock := s.Index.Records[start:end]
 
@@ -624,11 +626,6 @@ func (s *SSTable) Get(conf *config.Config, key []byte) (*DataRecord, error) {
 			if err != nil {
 				return nil, err
 			}
-
-			if record.Tombstone {
-				return nil, fmt.Errorf("record marked as deleted") // Ako je tombstone, ključ je obrisan
-			}
-
 			return record, nil
 		}
 	}
@@ -655,7 +652,7 @@ func (s *SSTable) ReadRecordWithKey(bm *block_organization.BlockManager, blockNu
 	} else {
 		dataOffset, err = s.Index.FindDataOffsetWithPrefix(sumRec.IndexOffset, []byte(prefix), bm)
 		if err != nil {
-			println("Error finding data offset with key:", prefix, "Error:", err)
+			fmt.Println("Error finding data offset with key:", prefix, "Error:", err)
 			return adapter.MemtableEntry{}, -1
 		}
 	}
@@ -787,7 +784,6 @@ func StartSSTable(level int, gen int, conf *config.Config, dict *compression.Dic
 	return sstable, nil
 }
 
-// TODO: Ispraviti ako je Dictionary globalan, a ne zaseban za SSTable
 // DeleteFiles briše sve fajlove vezane za odgovarajući SSTable
 func (s *SSTable) DeleteFiles(conf *config.Config) error {
 	elements := []struct {

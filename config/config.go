@@ -107,8 +107,8 @@ func LoadConfigFile(path string) (*Config, error) {
 			MaxLevel:            5,
 			CompactionAlgorithm: "size_tiered",
 			// "leveled" KOMPAKCIJA
-			BaseSSTableLimit:    10000, // Bazni limit SSTable-a (BlockSize * 10000)
-			LevelSizeMultiplier: 10,    // Multiplikator velicine nivoa
+			BaseSSTableLimit:    10000, // Bazni limit SSTable-a (DataBlock je velicine 4096, 8192 ili 16384 bajta)
+			LevelSizeMultiplier: 10,    // Multiplikator velicine nivoa (granica za prvi nivo je BaseSSTableLimit pomnožena sa 10, kod drugog sa 100, itd.)
 			// "size_tiered" KOMPAKCIJA
 			MaxTablesPerLevel: 8, // Maksimalan broj SSTable-ova po nivou
 		},

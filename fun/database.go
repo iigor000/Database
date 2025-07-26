@@ -7,11 +7,12 @@ import (
 
 	"github.com/iigor000/database/config"
 	// "github.com/iigor000/database/structures/adapter"
+	"github.com/iigor000/database/structures/adapter"
 	"github.com/iigor000/database/structures/cache"
 	"github.com/iigor000/database/structures/compression"
 	writeaheadlog "github.com/iigor000/database/structures/writeAheadLog"
 
-	// "github.com/iigor000/database/structures/lsmtree"
+	"github.com/iigor000/database/structures/lsmtree"
 	"github.com/iigor000/database/structures/memtable"
 	"github.com/iigor000/database/structures/sstable"
 	"github.com/iigor000/database/util"
@@ -113,7 +114,7 @@ func (db *Database) put(key string, value []byte) error {
 		}
 
 		// Proverava uslov za kompakciju i vrši kompakciju ako je potrebno (počinje proveru od prvog nivoa)
-		// lsmtree.Compact(db.config, 1)
+		// lsmtree.Compact(db.config)
 
 		recordsToCache := db.memtables.Memtables[db.memtables.NumberOfMemtables-1].GetAllEntries()
 
@@ -125,8 +126,8 @@ func (db *Database) put(key string, value []byte) error {
 		// Dodajemo novi Memtable na kraj
 		db.memtables.Memtables[db.memtables.NumberOfMemtables-1] = memtable.NewMemtable(db.config)
 
-		//TODO: Povecati generaciju za flush
-		db.memtables.GenToFlush++
+		// Ako se desi kompakcija, može se promeniti broj sledeće generacije SSTable-a
+		db.memtables.GenToFlush = lsmtree.GetNextSSTableGeneration(db.config, 1)
 
 		//TODO: Zapisati u wal da je flush uradjen
 
@@ -182,28 +183,22 @@ func (db *Database) get(key string) ([]byte, bool, error) {
 		return nil, false, nil
 	}
 
-	// record, err := lsmtree.Get(db.config, keyByte)
-	// if err != nil {
-	// 	return nil, false, err
-	// } else {
-	// 	entry = &adapter.MemtableEntry{
-	// 		Key:       record.Key,
-	// 		Value:     record.Value,
-	// 		Timestamp: record.Timestamp,
-	// 		Tombstone: record.Tombstone,
-	// 	}
-
-	// 	if entry.Tombstone {
-	// 		return nil, false, nil // Ako je tombstone, ne vracamo vrednost
-	// 	}
-	// }
+	record, err := lsmtree.Get(db.config, keyByte)
+	if err != nil {
+		return nil, false, err
+	} else {
+		entry = &adapter.MemtableEntry{
+			Key:       record.Key,
+			Value:     record.Value,
+			Timestamp: record.Timestamp,
+			Tombstone: record.Tombstone,
+		}
+	}
 
 	// Ako se nalazi u LSM stablu, stavljamo ga u cache
-	if entry != nil {
-		db.cache.Put(*entry)
-		if !entry.Tombstone {
-			return entry.Value, true, nil
-		}
+	db.cache.Put(*entry)
+	if !entry.Tombstone {
+		return entry.Value, true, nil
 	}
 
 	return nil, false, nil
