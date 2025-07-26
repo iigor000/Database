@@ -723,6 +723,8 @@ func (sstable *SSTable) ValidateMerkleTree(conf *config.Config, dict *compressio
 		return false, nil
 	} else {
 		println("There has been changes in the data, Merkle tree is not valid")
+		println("Changes are on indexes:")
+		println(old_mt.Compare(new_mt))
 		return true, nil
 	}
 

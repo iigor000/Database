@@ -135,3 +135,28 @@ func TestWriteReadToFile(t *testing.T) {
 		t.Fatal("Root hashes are not equal")
 	}
 }
+
+func TestCompareMerkleTrees(t *testing.T) {
+	data1 := [][]byte{
+		[]byte("data1"),
+		[]byte("data2"),
+		[]byte("data3"),
+		[]byte("data4"),
+	}
+	data2 := [][]byte{
+		[]byte("data1"),
+		[]byte("data5"),
+		[]byte("data3"),
+		[]byte("data6"),
+	}
+	tree1 := NewMerkleTree(data1)
+	tree2 := NewMerkleTree(data2)
+	if tree1 == nil || tree2 == nil {
+		t.Fatal("Merkle Tree is nil")
+	}
+	differences := tree1.Compare(tree2)
+	if len(differences) == 0 {
+		t.Fatal("Merkle Trees are identical")
+	}
+	fmt.Println("Differences found at indices: ", differences)
+}

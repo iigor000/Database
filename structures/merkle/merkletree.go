@@ -177,50 +177,103 @@ func BFS(merkletree *MerkleTree) []Node {
 
 // Serijalizacija Merkle stabla u bajt niz bez encoder biblioteke
 // Upisuju se listovi Merkle stabla u bajt niz
+// Serijalizacija Merkle stabla u bajt niz - samo listovi (BFS verzija)
 func (t *MerkleTree) Serialize() ([]byte, error) {
 	var buf bytes.Buffer
+	// Prvo MerkleRootHash
 	if err := binary.Write(&buf, binary.LittleEndian, t.MerkleRootHash); err != nil {
 		return nil, err
 	}
-	serializedNodes := BFS(t)
-	for _, node := range serializedNodes {
-		if err := binary.Write(&buf, binary.LittleEndian, node.Hash); err != nil {
+	allNodes := BFS(t)
+	leaves := findLeaves(allNodes)
+	for _, leaf := range leaves {
+		if err := binary.Write(&buf, binary.LittleEndian, leaf.Hash); err != nil {
 			return nil, err
 		}
 	}
+
 	return buf.Bytes(), nil
 }
 
+func findLeaves(nodes []Node) []Node {
+	var leaves []Node
+	totalNodes := len(nodes)
+	for i := 0; i < totalNodes; i++ {
+		leftChildIndex := 2*i + 1
+		rightChildIndex := 2*i + 2
+		if leftChildIndex >= totalNodes && rightChildIndex >= totalNodes {
+			leaves = append(leaves, nodes[i])
+		}
+	}
+	return leaves
+}
+
 // Deserijalizacija Merkle stabla iz bajt niza
+// Deserijalizacija Merkle stabla iz bajt niza - samo listovi
 func Deserialize(data []byte) (*MerkleTree, error) {
 	var merkleRootHash HashValue
 	buf := bytes.NewBuffer(data)
+
+	// Prvo čitaj MerkleRootHash
 	if err := binary.Read(buf, binary.LittleEndian, &merkleRootHash); err != nil {
 		return nil, err
 	}
-
-	nodes := []Node{}
+	var leafHashes []HashValue
 	for buf.Len() > 0 {
-		var nodeHash HashValue
-		if err := binary.Read(buf, binary.LittleEndian, &nodeHash); err != nil {
+		var leafHash HashValue
+		if err := binary.Read(buf, binary.LittleEndian, &leafHash); err != nil {
 			return nil, err
 		}
-		nodes = append(nodes, Node{Hash: nodeHash})
+		leafHashes = append(leafHashes, leafHash)
 	}
 
-	if len(nodes) == 0 {
-		return nil, errors.New("invalid data")
+	if len(leafHashes) == 0 {
+		return nil, errors.New("no leaf data found")
 	}
+	root := buildMerkleTree(leafHashes)
 
-	for i := range nodes {
-		if i*2+1 < len(nodes) {
-			nodes[i].Left = &nodes[i*2+1]
-		}
-		if i*2+2 < len(nodes) {
-			nodes[i].Right = &nodes[i*2+2]
-		}
-	}
-
-	root := &nodes[0]
 	return &MerkleTree{Root: root, MerkleRootHash: merkleRootHash}, nil
+}
+
+// Funkcija koja uporedjuje dva Merkle stabla i vraca listu indeksa gde se stabla razlikuju
+// U ovom slucaju, uporedjujemo samo hash vrednosti listova stabla
+// Ako su hash vrednosti razlicite, dodajemo indeks u listu razlika
+func (mt *MerkleTree) Compare(other *MerkleTree) []int {
+	var differences []int
+
+	// Prvo proveri da li su stabla potpuno ista
+	if mt.MerkleRootHash.Hash == other.MerkleRootHash.Hash {
+		return differences
+	}
+
+	// ✅ Koristi postojeću BFS funkciju
+	nodes1 := BFS(mt)
+	nodes2 := BFS(other)
+
+	// ✅ Koristi postojeću findLeaves funkciju (ne filterLeaves)
+	leaves1 := findLeaves(nodes1)
+	leaves2 := findLeaves(nodes2)
+
+	// Poredi listove
+	maxLen := len(leaves1)
+	if len(leaves2) > maxLen {
+		maxLen = len(leaves2)
+	}
+
+	for i := 0; i < maxLen; i++ {
+		if i >= len(leaves1) {
+			differences = append(differences, i)
+			continue
+		}
+		if i >= len(leaves2) {
+			differences = append(differences, i)
+			continue
+		}
+
+		if leaves1[i].Hash != leaves2[i].Hash {
+			differences = append(differences, i)
+		}
+	}
+
+	return differences
 }
