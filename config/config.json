@@ -34,7 +34,7 @@
     "max_sstables_per_level": 8
   },
   "token_bucket": {
-    "start_tokens": 10,
+    "start_tokens": 1000,
     "refill_interval_s": 60
   },
   "compression": {

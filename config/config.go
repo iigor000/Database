@@ -113,8 +113,8 @@ func LoadConfigFile(path string) (*Config, error) {
 			MaxTablesPerLevel: 8, // Maksimalan broj SSTable-ova po nivou
 		},
 		TokenBucket: TokenBucketConfig{
-			StartTokens:     5,
-			RefillIntervalS: 120, // Interval refilovanja tokena u sekundama
+			StartTokens:     1000, // Broj tokena na pocetku
+			RefillIntervalS: 120,  // Interval refilovanja tokena u sekundama
 		},
 		Compression: CompressionConfig{
 			DictionaryDir: "data/compression_dict",
