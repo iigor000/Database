@@ -30,7 +30,8 @@ func (b *BloomFilter) Add(data []byte) {
 // Kada proveravamo da li je element u filteru, prolazimo kroz sve hash funckije i proveravamo da li je indeks dobijen iz njih true
 func (b *BloomFilter) Read(data []byte) bool {
 	for _, h := range b.HashFunctions {
-		if !b.Filter[h.Hash(data)%uint64(len(b.Filter))] {
+		hashed := h.Hash(data)
+		if !b.Filter[hashed%uint64(len(b.Filter))] {
 			return false
 		}
 	}
