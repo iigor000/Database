@@ -1,6 +1,0 @@
-Generation: 15
-Data: data/sstable/1/15/usertable-000015-Data.db
-Index: data/sstable/1/15/usertable-000015-Index.db
-Summary: data/sstable/1/15/usertable-000015-Summary.db
-Filter: data/sstable/1/15/usertable-000015-Filter.db
-Metadata: data/sstable/1/15/usertable-000015-Metadata.db

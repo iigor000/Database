@@ -298,12 +298,13 @@ func (dr *DataRecord) Deserialize(data []byte, dict *compression.Dictionary) err
 	return nil
 }
 
-func (d *Data) ReadRecordAtOffset(path string, conf *config.Config, dict *compression.Dictionary, offset int) (*DataRecord, error) {
+// ReadRecordAtOffset cita DataRecord na datom ofsetu iz Data fajla
+func (d *Data) ReadRecordAtOffset(conf *config.Config, dict *compression.Dictionary, dataOffset int) (*DataRecord, error) {
 	bm := block_organization.NewBlockManager(conf)
 
 	// Računamo koji blok sadrži traženi ofset
-	blockNum := offset / conf.Block.BlockSize
-	blockData, err := bm.ReadBlock(path, blockNum)
+	blockNum := dataOffset / conf.Block.BlockSize
+	blockData, err := bm.ReadBlock(d.DataFile.Path, blockNum)
 
 	if err != nil {
 		return nil, fmt.Errorf("error reading data block %d: %w", blockNum, err)
@@ -311,7 +312,7 @@ func (d *Data) ReadRecordAtOffset(path string, conf *config.Config, dict *compre
 
 	record := &DataRecord{}
 	if err := record.Deserialize(blockData, dict); err != nil {
-		return nil, fmt.Errorf("error deserializing data record at offset %d: %w", offset, err)
+		return nil, fmt.Errorf("error deserializing data record at offset %d: %w", dataOffset, err)
 	}
 
 	return record, nil

@@ -12,7 +12,6 @@ import (
 
 	"github.com/iigor000/database/config"
 	"github.com/iigor000/database/structures/bloomfilter"
-	"github.com/iigor000/database/structures/compression"
 	"github.com/iigor000/database/structures/merkle"
 	"github.com/iigor000/database/structures/sstable"
 )
@@ -35,7 +34,7 @@ func Get(conf *config.Config, key []byte) (*sstable.DataRecord, error) {
 			if err != nil {
 				return nil, err
 			}
-			if record == nil || rec.Timestamp > record.Timestamp {
+			if record == nil || (rec != nil && rec.Timestamp > record.Timestamp) {
 				record = rec
 			}
 		}
@@ -46,22 +45,6 @@ func Get(conf *config.Config, key []byte) (*sstable.DataRecord, error) {
 	}
 
 	return nil, nil // Ako nije pronađen ključ ni u jednom nivou
-}
-
-// extractGenerationFromFileName izvlači generaciju iz imena fajla SSTable-a
-func extractGenerationFromFileName(fileName string) (int, error) {
-	pathExample := "usertable-000001-TOC.txt"
-
-	if len(fileName) == len(pathExample) {
-		// Izvuci generaciju iz imena fajla
-		genStr := fileName[len("usertable-") : len(fileName)-len("-TOC.txt")]
-		gen, err := strconv.Atoi(genStr)
-		if err != nil {
-			return 0, err
-		}
-		return gen, nil
-	}
-	return 0, fmt.Errorf("invalid file name format")
 }
 
 // GetNextSSTableGeneration vraća sledeću generaciju SSTable-a na datom nivou
@@ -79,10 +62,10 @@ func GetNextSSTableGeneration(conf *config.Config, level int) int {
 		panic(fmt.Errorf("failed to read level %d directory '%s' : %w", level, dir, err))
 	}
 
-	maxGen := 0
+	maxGen := 1
 	for _, entry := range entries {
 		if entry.IsDir() {
-			gen, err := extractGenerationFromFileName(entry.Name())
+			gen, err := strconv.Atoi(entry.Name())
 			if err == nil && gen > maxGen {
 				maxGen = gen
 			}
@@ -96,7 +79,6 @@ func GetNextSSTableGeneration(conf *config.Config, level int) int {
 func getSSTablesByLevel(conf *config.Config, level int) ([]*sstable.SSTable, error) {
 	dir := fmt.Sprintf("%s/%d", conf.SSTable.SstableDirectory, level)
 	entries, err := os.ReadDir(dir)
-
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
@@ -120,11 +102,10 @@ func getSSTablesByLevel(conf *config.Config, level int) ([]*sstable.SSTable, err
 				continue // Ako TOC fajl ne postoji, preskoči ovaj direktorijum
 			}
 
-			dict, err := compression.Read(filepath.Join(genDir, "dict.db"))
+			table, err := sstable.StartSSTable(level, gen, conf, nil)
 			if err != nil {
-				return nil, fmt.Errorf("failed to read dictionary from '%s': %w", genDir, err)
+				return nil, fmt.Errorf("failed to start SSTable for level %d generation %d: %w", level, gen, err)
 			}
-			table := sstable.NewSSTable(conf, level, gen, dict)
 			tables = append(tables, table)
 		}
 	}

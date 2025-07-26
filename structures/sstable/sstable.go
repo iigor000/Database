@@ -34,7 +34,7 @@ type SSTable struct {
 	MetadataOffset int64 // Offset Merkle stabla u fajlu
 }
 
-// NewSSTable kreira novi SSTable
+// FlushSSTable kreira SSTable iz Memtable i upisuje je na disk
 func FlushSSTable(conf *config.Config, memtable memtable.Memtable, generation int, dict *compression.Dictionary) *SSTable {
 	//Sortiramo memtable.Keys da bismo imali uredjen redosled
 	sort.Slice(memtable.Keys, func(i, j int) bool {
@@ -315,6 +315,9 @@ func ReadMetadata(path string, conf *config.Config) (*merkle.MerkleTree, error) 
 		return nil, fmt.Errorf("error reading Merkle tree from file %s: %w", path, err)
 	}
 	m, err = merkle.Deserialize(block)
+	if err != nil {
+		return nil, fmt.Errorf("error deserializing Merkle tree: %w", err)
+	}
 	return m, nil
 }
 
@@ -370,142 +373,6 @@ func (sstable *SSTable) ReadFilterMetaCompression(path string, offsets map[strin
 		}
 	}
 	return nil
-}
-
-// NewSSTable kreira novi SSTable iz fajlova
-func NewSSTable(conf *config.Config, level int, gen int, dict *compression.Dictionary) *SSTable {
-	sstable := &SSTable{
-		CompressionKey: dict,
-		Gen:            gen,
-		Level:          level,
-		SingleFile:     conf.SSTable.SingleFile,
-	}
-	dir := fmt.Sprintf("%s/%d/%d", conf.SSTable.SstableDirectory, level, gen)
-	// Proveravamo da li direktorijum postoji
-	//err := CreateDirectoryIfNotExists(dir)
-	//Ucitavamo offsete sa kraja fajla ako je SingleFile
-
-	fmt.Print("Reading SSTable from directory: ", dir, "\n")
-
-	if conf.SSTable.SingleFile {
-		path := CreateFileName(dir, gen, "SSTable", "db")
-		offsets, err := ReadOffsetsFromFile(path, conf)
-		if err != nil {
-			panic("Error reading offsets from file: " + err.Error())
-		}
-		sstable.Data = &Data{
-			DataFile: File{
-				Offset: offsets["Data"],
-			},
-		}
-		sstable.Index = &Index{
-			IndexFile: File{
-				Offset: offsets["Index"],
-			},
-		}
-		sstable.Summary = &Summary{
-			SummaryFile: File{
-				Offset: offsets["Summary"],
-			},
-		}
-		sstable.FilterOffset = offsets["Filter"]
-		// Citamo compression info, bloom filter i Merkle tree
-		err = sstable.ReadFilterMetaCompression(path, offsets, true, conf)
-		if err != nil {
-			panic("Error reading filter, metadata and compression info: " + err.Error())
-		}
-		if sstable.UseCompression {
-			sstable.CompressionKey = dict
-		} else {
-			sstable.CompressionKey = nil
-		}
-
-	}
-
-	if !sstable.SingleFile {
-		// Citanje kompresije iz fajla
-		dictPath := CreateFileName(dir, gen, "CompressionInfo", "db")
-		useCompression, err := ReadCompressionInfo(dictPath, conf)
-		if err != nil {
-			panic("Error reading compression info from file: " + err.Error())
-		}
-		sstable.UseCompression = useCompression
-		sstable.CompressionKey = dict
-		if !useCompression {
-			sstable.CompressionKey = nil
-		}
-
-		println("Using compression:", sstable.UseCompression)
-	}
-
-	sstable.Dir = dir
-	// Citanje Data fajla
-	dataPath := CreateFileName(dir, gen, "SSTable", "db")
-	if !sstable.SingleFile {
-		dataPath = CreateFileName(dir, gen, "Data", "db")
-		data, err := ReadData(dataPath, conf, sstable.CompressionKey, 0, 0)
-		if err != nil {
-			panic("Error reading data from file: " + err.Error())
-		}
-		sstable.Data = data
-	} else {
-		data, err := ReadData(dataPath, conf, sstable.CompressionKey, sstable.Data.DataFile.Offset, sstable.Index.IndexFile.Offset)
-		if err != nil {
-			panic("Error reading data from file: " + err.Error())
-		}
-		sstable.Data = data
-	}
-	// Citanje Index fajla
-	indexPath := dataPath
-	if !sstable.SingleFile {
-		indexPath = CreateFileName(dir, gen, "Index", "db")
-		index, err := ReadIndex(indexPath, conf, 0, 0)
-		if err != nil {
-			panic("Error reading index from file: " + err.Error())
-		}
-		sstable.Index = index
-	} else {
-		index, err := ReadIndex(indexPath, conf, sstable.Index.IndexFile.Offset, sstable.Summary.SummaryFile.Offset)
-		if err != nil {
-			panic("Error reading index from file: " + err.Error())
-		}
-		sstable.Index = index
-	}
-
-	// Citanje Summary fajla
-	summaryPath := indexPath
-	if !sstable.SingleFile {
-		summaryPath = CreateFileName(dir, gen, "Summary", "db")
-		summary, err := ReadSummary(summaryPath, conf, 0, 0)
-		if err != nil {
-			panic("Error reading summary from file: " + err.Error())
-		}
-		sstable.Summary = summary
-	} else {
-		summary, err := ReadSummary(summaryPath, conf, sstable.Summary.SummaryFile.Offset, sstable.FilterOffset)
-		if err != nil {
-			panic("Error reading summary from file: " + err.Error())
-		}
-		sstable.Summary = summary
-	}
-	if !sstable.SingleFile {
-		// Citanje Filter fajla
-		filterPath := CreateFileName(dir, gen, "Filter", "db")
-		filterData, err := ReadBloomFilter(filterPath, conf)
-		if err != nil {
-			panic("Error reading bloom filter from file: " + err.Error())
-		}
-		sstable.Filter = filterData
-		// Citanje Metadata fajla
-		metadataPath := CreateFileName(dir, gen, "Metadata", "db")
-		metadata, err := ReadMetadata(metadataPath, conf)
-		if err != nil {
-			panic("Error reading Merkle tree from file: " + err.Error())
-		}
-		sstable.Metadata = metadata
-	}
-
-	return sstable
 }
 
 // WriteSSTable upisuje SSTable u fajl
@@ -580,7 +447,6 @@ func NewEmptySSTable(conf *config.Config, level int, generation int) *SSTable {
 		Gen:            generation,
 		Level:          level,
 		UseCompression: conf.SSTable.UseCompression,
-		// TODO: jel mi njega uvek koristimo ili samo kada je flag True
 		CompressionKey: compression.NewDictionary(),
 	}
 	if sstable.UseCompression {
@@ -597,7 +463,6 @@ func (s *SSTable) Get(conf *config.Config, key []byte) (*DataRecord, error) {
 	if !s.Filter.Read(key) {
 		return nil, nil
 	}
-
 	// Ako Bloom filter sadrži ključ, proveri u summary i index
 	if bytes.Compare(key, s.Summary.FirstKey) < 0 || bytes.Compare(key, s.Summary.LastKey) > 0 {
 		return nil, nil // Ključ nije u ovom summary bloku
@@ -606,27 +471,23 @@ func (s *SSTable) Get(conf *config.Config, key []byte) (*DataRecord, error) {
 	// Ako je ključ unutar opsega summary, proveri index
 	// indexOffset je offset u Index segmentu gde se nalazi ovaj summary
 	for _, rec := range s.Summary.Records {
-		start := rec.IndexOffset
-		end := start + rec.NumberOfRecords
+		if bytes.Compare(key, rec.FirstKey) < 0 {
+			continue // Ključ je manji od prvog ključa u ovom summary bloku
+		}
 
-		indexBlock := s.Index.Records[start:end]
+		bm := block_organization.NewBlockManager(conf)
+		dataOffset, err := s.Index.FindDataOffsetWithKey(rec.IndexOffset, key, bm)
+		if err != nil {
+			return nil, fmt.Errorf("error finding data offset with key %s: %w", string(key), err)
+		}
 
-		// Binarno pretraži ključ u indexBlock-u
-		i := sort.Search(len(indexBlock), func(i int) bool {
-			return bytes.Compare(indexBlock[i].Key, key) >= 0
-		})
+		record, err := s.Data.ReadRecordAtOffset(conf, s.CompressionKey, dataOffset) // Citanje iz Data fajla
+		if err != nil || record.Key == nil {
+			return nil, fmt.Errorf("error reading data record at offset %d: %w", dataOffset, err)
+		}
 
-		if i < len(indexBlock) && bytes.Equal(indexBlock[i].Key, key) {
-			// Ako je ključ pronađen u indexu, pročitaj podatke iz Data segmenta
-			dataOffset := indexBlock[i].Offset
-			dir := fmt.Sprintf("%s/%d/%d", conf.SSTable.SstableDirectory, s.Level, s.Gen)
-			filename := CreateFileName(dir, s.Gen, "Data", "db")
-
-			record, err := s.Data.ReadRecordAtOffset(filename, conf, s.CompressionKey, dataOffset)
-			if err != nil {
-				return nil, err
-			}
-			return record, nil
+		if bytes.Equal(record.Key, key) {
+			return record, nil // Vracamo zapis ako je kljuc pronadjen
 		}
 	}
 
@@ -721,6 +582,7 @@ func StartSSTable(level int, gen int, conf *config.Config, dict *compression.Dic
 		} else {
 			sstable.CompressionKey = nil
 		}
+
 		//Ucitavamo Summary
 		summary, err := ReadSummary(sstable.Summary.SummaryFile.Path, conf, sstable.Summary.SummaryFile.Offset, sstable.FilterOffset)
 		if err != nil {
@@ -728,20 +590,23 @@ func StartSSTable(level int, gen int, conf *config.Config, dict *compression.Dic
 		}
 		sstable.Summary = summary
 		return sstable, nil
-
 	}
+
 	// Ucitavamo BloomFiler
 	bfPath := CreateFileName(dir, gen, "Filter", "db")
 	bf, err := ReadBloomFilter(bfPath, conf)
 	if err != nil {
 		return nil, fmt.Errorf("error reading bloom filter: %w", err)
 	}
+
 	// Ucitavamo Summary
 	summaryPath := CreateFileName(dir, gen, "Summary", "db")
 	summary, err := ReadSummary(summaryPath, conf, 0, 0)
 	if err != nil {
 		return nil, fmt.Errorf("error reading summary: %w", err)
 	}
+
+	// Ucitavamo kompresiju
 	dictpath := CreateFileName(dir, gen, "CompressionInfo", "db")
 	UseCompression, err := ReadCompressionInfo(dictpath, conf)
 	if err != nil {

@@ -1,6 +1,0 @@
-Generation: 12
-Data: data/sstable/1/12/usertable-000012-Data.db
-Index: data/sstable/1/12/usertable-000012-Index.db
-Summary: data/sstable/1/12/usertable-000012-Summary.db
-Filter: data/sstable/1/12/usertable-000012-Filter.db
-Metadata: data/sstable/1/12/usertable-000012-Metadata.db

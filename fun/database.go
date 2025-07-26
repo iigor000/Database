@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/iigor000/database/config"
-	// "github.com/iigor000/database/structures/adapter"
 	"github.com/iigor000/database/structures/adapter"
 	"github.com/iigor000/database/structures/cache"
 	"github.com/iigor000/database/structures/compression"
@@ -106,7 +105,8 @@ func (db *Database) put(key string, value []byte) error {
 	if shouldFlush {
 		// Flush Memtable na disk
 		println("Flushing Memtable to disk...")
-		sstable.FlushSSTable(db.config, *db.memtables.Memtables[db.memtables.NumberOfMemtables-1], db.memtables.GenToFlush, db.compression)
+		println("Gen to Flush:", db.memtables.GenToFlush)
+		sstable.FlushSSTable(db.config, *db.memtables.Memtables[0], db.memtables.GenToFlush, db.compression)
 
 		db.lastFlushedGen = db.memtables.GenToFlush // azuriramo poslednju flushovanu generaciju
 		if err := db.wal.RemoveSegmentsUpTo(db.calculateLWM()); err != nil {
@@ -116,7 +116,7 @@ func (db *Database) put(key string, value []byte) error {
 		// Proverava uslov za kompakciju i vrši kompakciju ako je potrebno (počinje proveru od prvog nivoa)
 		// lsmtree.Compact(db.config)
 
-		recordsToCache := db.memtables.Memtables[db.memtables.NumberOfMemtables-1].GetAllEntries()
+		recordsToCache := db.memtables.Memtables[0].GetAllEntries()
 
 		// Resetujemo redosled Memtable-a
 		for j := 0; j < db.memtables.NumberOfMemtables-1; j++ {
@@ -187,6 +187,9 @@ func (db *Database) get(key string) ([]byte, bool, error) {
 	if err != nil {
 		return nil, false, err
 	} else {
+		if record == nil {
+			return nil, false, nil // Nije pronađen ključ
+		}
 		entry = &adapter.MemtableEntry{
 			Key:       record.Key,
 			Value:     record.Value,

@@ -1,6 +1,0 @@
-Generation: 23
-Data: data/sstable/1/23/usertable-000023-Data.db
-Index: data/sstable/1/23/usertable-000023-Index.db
-Summary: data/sstable/1/23/usertable-000023-Summary.db
-Filter: data/sstable/1/23/usertable-000023-Filter.db
-Metadata: data/sstable/1/23/usertable-000023-Metadata.db

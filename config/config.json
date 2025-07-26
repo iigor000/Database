@@ -18,7 +18,7 @@
     "min_size": 16
   },
   "sstable": {
-    "use_compression": true,
+    "use_compression": false,
     "summary_level": 10,
     "directory": "data/sstable",
     "single_file": false

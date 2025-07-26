@@ -94,6 +94,8 @@ func TestDatabase_Delete(t *testing.T) {
 	}
 }
 
+// TODO: FIX Ne radi kada je useCompression true (potrebno implementirati kompresiju kod LSMTree)
+// TODO: FIX Ne radi kada je singleFile true (neophodno implementirati SingleFile pristup kod Get() u SSTable)
 func TestDatabase_PutMany(t *testing.T) {
 	// Test inserting multiple key-value pairs into the database
 	config, err := config.LoadConfigFile("../config/config.json")
@@ -127,7 +129,6 @@ func TestDatabase_PutMany(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to get value for key %s: %v", k, err)
 		}
-		//println("Key:", k, "Value:", string(storedValue))
 		if !found || string(storedValue) != string(v) {
 			t.Errorf("Expected value for key %s to be %s, got %s", k, v, storedValue)
 		}

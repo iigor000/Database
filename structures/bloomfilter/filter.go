@@ -78,9 +78,19 @@ func Deserialize(data []byte) []BloomFilter {
 
 	// Proveravamo da li postoji jos filtera u niz bajtova
 	for len(data) > 0 {
+		if len(data) < 8 {
+			break
+		}
+
 		// Ucitavamo duzine nizova (k i m)
 		m := binary.BigEndian.Uint32(data[:4])
 		k := binary.BigEndian.Uint32(data[4:8])
+
+		totalLength := 8 + int(m) + int(k)*4
+
+		if len(data) < totalLength {
+			break
+		}
 
 		// Ucitavamo filter (krecemo od 8. bajta jer smo pre toga ucitali duzine)
 		filter := make([]bool, m)

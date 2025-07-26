@@ -31,7 +31,7 @@ func NewMemtables(conf *config.Config) *Memtables {
 		NumberOfMemtables: conf.Memtable.NumberOfMemtables,
 		Memtables:         memtables,
 		conf:              conf,
-		GenToFlush:        0, // Inicijalizujemo generaciju za flush na 0
+		GenToFlush:        1, // Inicijalizujemo generaciju za flush na 1
 	}
 }
 

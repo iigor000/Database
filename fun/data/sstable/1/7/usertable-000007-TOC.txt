@@ -1,6 +1,0 @@
-Generation: 7
-Data: data/sstable/1/7/usertable-000007-Data.db
-Index: data/sstable/1/7/usertable-000007-Index.db
-Summary: data/sstable/1/7/usertable-000007-Summary.db
-Filter: data/sstable/1/7/usertable-000007-Filter.db
-Metadata: data/sstable/1/7/usertable-000007-Metadata.db
