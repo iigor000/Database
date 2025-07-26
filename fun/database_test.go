@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	"github.com/iigor000/database/config"
@@ -26,7 +27,7 @@ func createTestDatabase(t *testing.T) (*Database, func()) {
 	// Override paths
 	cfg.Wal.WalDirectory = filepath.Join(tempDir, "wal")
 	cfg.SSTable.SstableDirectory = filepath.Join(tempDir, "sstable")
-	cfg.TokenBucket.StartTokens = 1000 // Enough for all test operations
+	cfg.TokenBucket.StartTokens = 100 // Enough for all test operations
 	cfg.TokenBucket.RefillIntervalS = 1
 
 	// Create required directories
@@ -126,40 +127,135 @@ func TestDatabase_Delete(t *testing.T) {
 func TestDatabase_PutMany(t *testing.T) {
 	// db, cleanup := createTestDatabase(t)
 	// defer cleanup()
-	config, err := config.LoadConfigFile("../config/config.json")
-	if err != nil {
-		panic(err)
-	}
-	db, err := NewDatabase(config, "root")
-	if err != nil {
-		panic(err)
+	// config, err := config.LoadConfigFile("../config/config.json")
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// db, err := NewDatabase(config, "root")
+	// if err != nil {
+	// 	panic(err)
+	// }
+
+	dataDir := filepath.Join("fun", "data_test")
+	fmt.Printf("Korišćenje postojećeg direktorijuma: %s\n", dataDir)
+	defer os.RemoveAll(dataDir)
+
+	// Konfiguracija za test
+	cfg := &config.Config{
+		Block: config.BlockConfig{
+			BlockSize: 4096,
+		},
+		Wal: config.WalConfig{
+			WalSegmentSize: 1024 * 1024,
+			WalDirectory:   filepath.Join(dataDir, "wal"),
+		},
+		Memtable: config.MemtableConfig{
+			NumberOfMemtables: 2,
+			NumberOfEntries:   40,
+			Structure:         "skiplist",
+		},
+		Skiplist: config.SkiplistConfig{
+			MaxHeight: 12,
+		},
+		SSTable: config.SSTableConfig{
+			UseCompression:   false,
+			SummaryLevel:     10,
+			SstableDirectory: filepath.Join(dataDir, "sstable"),
+			SingleFile:       true,
+		},
+		Cache: config.CacheConfig{
+			Capacity: 1000,
+		},
+		TokenBucket: config.TokenBucketConfig{
+			StartTokens:     10000,
+			RefillIntervalS: 1,
+		},
+		LSMTree: config.LSMTreeConfig{
+			MaxLevel:            7,
+			CompactionAlgorithm: "leveled",
+			LevelSizeMultiplier: 10,
+			BaseSSTableLimit:    4,
+			MaxTablesPerLevel:   10,
+		},
+		BTree: config.BTreeConfig{
+			MinSize: 16,
+		},
+		Compression: config.CompressionConfig{
+			DictionaryDir: filepath.Join(dataDir, "compression_dict"),
+		},
 	}
 
-	// Create test data
+	// Kreirajte samo osnovne direktorijume - NE kreirajte fajlove kao direktorijume
+	requiredDirs := []string{
+		cfg.Wal.WalDirectory,
+		cfg.SSTable.SstableDirectory,
+	}
+
+	// Kreirajte SAMO direktorijume za nivoe, ne i fajlove unutar njih
+	for level := 0; level <= cfg.LSMTree.MaxLevel; level++ {
+		levelDir := filepath.Join(cfg.SSTable.SstableDirectory, strconv.Itoa(level))
+		requiredDirs = append(requiredDirs, levelDir)
+	}
+
+	// Kreiraj direktorijume
+	for _, dir := range requiredDirs {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatalf("Ne mogu da kreiram direktorijum %s: %v", dir, err)
+		}
+	}
+
+	// Inicijalizacija baze
+	fmt.Println("Inicijalizacija baze...")
+	db, err := NewDatabase(cfg, "testuser")
+	if err != nil {
+		t.Fatalf("Neuspešna inicijalizacija baze: %v", err)
+	}
+	fmt.Println("Baza uspešno inicijalizovana")
+
+	// Kreiranje token bucketa
+	fmt.Println("Kreiranje token bucketa za korisnika...")
+	if err := CreateBucket(db); err != nil {
+		t.Fatalf("Neuspešno kreiranje token bucketa: %v", err)
+	}
+	fmt.Println("Token bucket uspešno kreiran")
+
+	// Priprema test podataka
 	const testCount = 100
 	entries := make(map[string][]byte, testCount)
+	fmt.Printf("Priprema %d testnih unosa...\n", testCount)
 	for i := 0; i < testCount; i++ {
-		entries[fmt.Sprintf("key%d", i)] = []byte(fmt.Sprintf("value%d", i))
+		key := fmt.Sprintf("key%d", i)
+		value := fmt.Sprintf("value%d", i)
+		entries[key] = []byte(value)
 	}
 
-	// Insert all entries
+	// Ubacivanje podataka
+	fmt.Println("Početak ubacivanja podataka...")
 	for k, v := range entries {
+		fmt.Printf("Ubacivanje ključa: %s\n", k)
 		if err := db.Put(k, v); err != nil {
-			t.Fatalf("Put failed for key %s: %v", k, err)
+			t.Fatalf("Greška pri ubacivanju ključa %s: %v", k, err)
 		}
 	}
-	//fmt.Println("############################################################################################################")
-	// Verify all entries
-	println("Verifying entries...")
+
+	fmt.Println("Svi podaci uspešno ubaceni")
+
+	// Provera podataka
+	fmt.Println("Početak provere podataka...")
 	for k, v := range entries {
-		storedValue, found, err := db.Get(k) // Use exported Get
+		fmt.Printf("Provera ključa: %s\n", k)
+		storedValue, found, err := db.Get(k)
 		if err != nil {
-			t.Fatalf("Get failed for key %s: %v", k, err)
+			t.Fatalf("Greška pri dohvatanju ključa %s: %v", k, err)
 		}
 
+		if !found {
+			t.Errorf("Ključ %s nije pronađen", k)
+		}
 		if string(storedValue) != string(v) {
-			t.Errorf("Value mismatch for key %s, expected %q got %q", k, v, storedValue)
+			t.Errorf("Vrednost za ključ %s se ne poklapa, očekivano: %q, dobijeno: %q", k, v, storedValue)
 		}
 		println("Key:", k, "Value:", string(storedValue), "Found:", found)
 	}
+	fmt.Println("Svi podaci uspešno provereni")
 }
