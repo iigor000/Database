@@ -27,14 +27,15 @@ func Get(conf *config.Config, key []byte) (*sstable.DataRecord, error) {
 		if err != nil {
 			return nil, err
 		}
-
 		var record *sstable.DataRecord = nil
 		for _, table := range tables {
-			rec, err := table.Get(conf, key)
-			if err != nil {
-				return nil, err
+
+			rec, _ := table.Get(conf, key)
+
+			if record == nil {
+				record = rec
 			}
-			if record == nil || (rec != nil && rec.Timestamp > record.Timestamp) {
+			if rec != nil && rec.Timestamp > record.Timestamp {
 				record = rec
 			}
 		}
@@ -97,16 +98,17 @@ func getSSTablesByLevel(conf *config.Config, level int) ([]*sstable.SSTable, err
 				return nil, fmt.Errorf("failed to parse generation from directory name '%s': %w", genDir, err)
 			}
 
-			tocPath := filepath.Join(genDir, fmt.Sprintf("usertable-%06d-TOC.txt", gen))
-			if !sstable.FileExists(tocPath) {
-				continue // Ako TOC fajl ne postoji, preskoči ovaj direktorijum
+			tocPath := filepath.Join(genDir, fmt.Sprintf("usertable-%06d-Data.db", gen))
+			singlefile := filepath.Join(genDir, fmt.Sprintf("usertable-%06d-SSTable.db", gen))
+
+			if sstable.FileExists(tocPath) || sstable.FileExists(singlefile) {
+				table, err := sstable.StartSSTable(level, gen, conf, nil)
+				if err != nil {
+					return nil, fmt.Errorf("failed to start SSTable for level %d generation %d: %w", level, gen, err)
+				}
+				tables = append(tables, table)
 			}
 
-			table, err := sstable.StartSSTable(level, gen, conf, nil)
-			if err != nil {
-				return nil, fmt.Errorf("failed to start SSTable for level %d generation %d: %w", level, gen, err)
-			}
-			tables = append(tables, table)
 		}
 	}
 

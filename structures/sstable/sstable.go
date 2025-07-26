@@ -458,7 +458,7 @@ func NewEmptySSTable(conf *config.Config, level int, generation int) *SSTable {
 // Get traži ključ u SSTable-u i vraća odgovarajući DataRecord
 // Pomocna funkcija za LSM
 func (s *SSTable) Get(conf *config.Config, key []byte) (*DataRecord, error) {
-	println("SSTable Get called for key:", string(key))
+	//println("SSTable Get called for key:", string(key))
 	// Proveri Bloom filter pre pretrage
 	if !s.Filter.Read(key) {
 		return nil, nil
@@ -466,6 +466,7 @@ func (s *SSTable) Get(conf *config.Config, key []byte) (*DataRecord, error) {
 
 	// Ako Bloom filter sadrži ključ, proveri u summary i index
 	if bytes.Compare(key, s.Summary.FirstKey) < 0 || bytes.Compare(key, s.Summary.LastKey) > 0 {
+
 		return nil, nil // Ključ nije u ovom summary bloku
 	}
 
@@ -508,7 +509,7 @@ func (s *SSTable) ReadRecordWithKey(bm *block_organization.BlockManager, blockNu
 	} else {
 		dataOffset, err = s.Index.FindDataOffsetWithPrefix(sumRec.IndexOffset, []byte(prefix), bm)
 		if err != nil {
-			fmt.Println("Error finding data offset with key:", prefix, "Error:", err)
+			//fmt.Println("Error finding data offset with key:", prefix, "Error:", err)
 			return adapter.MemtableEntry{}, -1
 		}
 	}
@@ -530,7 +531,6 @@ func StartSSTable(level int, gen int, conf *config.Config, dict *compression.Dic
 		return nil, fmt.Errorf("invalid generation number: %d", gen)
 	}
 	dir := fmt.Sprintf("%s/%d/%d", conf.SSTable.SstableDirectory, level, gen)
-
 	if conf.SSTable.SingleFile {
 		sstable := &SSTable{
 			Gen:        gen,
@@ -574,6 +574,8 @@ func StartSSTable(level int, gen int, conf *config.Config, dict *compression.Dic
 		}
 		if sstable.UseCompression {
 			sstable.CompressionKey = dict
+			println("UseCompression")
+
 		} else {
 			sstable.CompressionKey = nil
 		}

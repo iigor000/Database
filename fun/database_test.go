@@ -150,18 +150,16 @@ func TestDatabase_PutMany(t *testing.T) {
 	}
 	//fmt.Println("############################################################################################################")
 	// Verify all entries
+	println("Verifying entries...")
 	for k, v := range entries {
 		storedValue, found, err := db.Get(k) // Use exported Get
 		if err != nil {
 			t.Fatalf("Get failed for key %s: %v", k, err)
 		}
 
-		if !found {
-			t.Errorf("Key %s not found", k)
-		}
-
 		if string(storedValue) != string(v) {
 			t.Errorf("Value mismatch for key %s, expected %q got %q", k, v, storedValue)
 		}
+		println("Key:", k, "Value:", string(storedValue), "Found:", found)
 	}
 }

@@ -78,7 +78,7 @@ func TestSSTableRead(t *testing.T) {
 			SstableDirectory: "./sstable_test",
 			UseCompression:   true,
 			SummaryLevel:     2,
-			SingleFile:       true,
+			SingleFile:       false,
 		},
 		Memtable: config.MemtableConfig{
 			NumberOfMemtables: 1,
@@ -166,7 +166,7 @@ func TestSSTableIterate(t *testing.T) {
 			SstableDirectory: "./sstable_test",
 			UseCompression:   true,
 			SummaryLevel:     2,
-			SingleFile:       true,
+			SingleFile:       false,
 		},
 		Memtable: config.MemtableConfig{
 			NumberOfMemtables: 1,

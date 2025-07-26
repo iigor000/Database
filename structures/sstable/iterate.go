@@ -15,7 +15,8 @@ type SSTableIterator struct {
 }
 
 func (sst *SSTable) NewSSTableIterator(bm *block_organization.BlockManager) *SSTableIterator {
-	rec, nxtBlck := sst.Data.ReadRecord(bm, 0, sst.CompressionKey)
+	bn := int(sst.Data.DataFile.Offset) / bm.BlockSize
+	rec, nxtBlck := sst.Data.ReadRecord(bm, bn, sst.CompressionKey)
 	return &SSTableIterator{
 		sstable:         sst,
 		currentRecord:   rec,
@@ -30,7 +31,7 @@ func (si *SSTableIterator) Next() (adapter.MemtableEntry, bool) {
 	}
 	rec := si.currentRecord
 	if si.sstable.SingleFile {
-		if int(si.sstable.Data.DataFile.SizeOnDisk) <= si.nextBlockNumber*si.blockManager.BlockSize {
+		if int(si.sstable.Data.DataFile.SizeOnDisk) < si.nextBlockNumber*si.blockManager.BlockSize {
 
 			si.Stop()
 			return rec, true
@@ -89,15 +90,15 @@ func (pi *PrefixIterator) Next() (adapter.MemtableEntry, bool) {
 	}
 	record := pi.Iterator.currentRecord
 	if pi.Iterator.sstable.SingleFile {
-		if int(pi.Iterator.sstable.Data.DataFile.SizeOnDisk) <= pi.Iterator.nextBlockNumber*pi.Iterator.blockManager.BlockSize {
+		if int(pi.Iterator.sstable.Data.DataFile.SizeOnDisk) < pi.Iterator.nextBlockNumber*pi.Iterator.blockManager.BlockSize {
 			pi.Iterator.Stop()
 			return record, true
 		}
 	}
 	rec, nextBlock := pi.Iterator.sstable.Data.ReadRecord(pi.Iterator.blockManager, pi.Iterator.nextBlockNumber, pi.Iterator.sstable.CompressionKey)
-	if !bytes.HasPrefix(record.Key, []byte(pi.Prefix)) {
+	if !bytes.HasPrefix(rec.Key, []byte(pi.Prefix)) {
 		pi.Iterator.Stop() // Zatvaramo iterator ako nema vise zapisa sa tim prefiksom
-		return adapter.MemtableEntry{}, false
+		return record, true
 	}
 	pi.Iterator.currentRecord = rec
 	pi.Iterator.nextBlockNumber = nextBlock
@@ -144,7 +145,7 @@ func (ri *RangeIterator) Next() (adapter.MemtableEntry, bool) {
 	}
 	record := ri.Iterator.currentRecord
 	if ri.Iterator.sstable.SingleFile {
-		if int(ri.Iterator.sstable.Data.DataFile.SizeOnDisk) <= ri.Iterator.nextBlockNumber*ri.Iterator.blockManager.BlockSize {
+		if int(ri.Iterator.sstable.Data.DataFile.SizeOnDisk) < ri.Iterator.nextBlockNumber*ri.Iterator.blockManager.BlockSize {
 			ri.Iterator.Stop()
 			return record, false
 		}
