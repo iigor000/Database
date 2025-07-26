@@ -457,12 +457,13 @@ func NewEmptySSTable(conf *config.Config, level int, generation int) *SSTable {
 
 // Get traži ključ u SSTable-u i vraća odgovarajući DataRecord
 // Pomocna funkcija za LSM
-// TODO: Dodati SingleFile opciju
 func (s *SSTable) Get(conf *config.Config, key []byte) (*DataRecord, error) {
+
 	// Proveri Bloom filter pre pretrage
 	if !s.Filter.Read(key) {
 		return nil, nil
 	}
+
 	// Ako Bloom filter sadrži ključ, proveri u summary i index
 	if bytes.Compare(key, s.Summary.FirstKey) < 0 || bytes.Compare(key, s.Summary.LastKey) > 0 {
 		return nil, nil // Ključ nije u ovom summary bloku
@@ -470,28 +471,22 @@ func (s *SSTable) Get(conf *config.Config, key []byte) (*DataRecord, error) {
 
 	// Ako je ključ unutar opsega summary, proveri index
 	// indexOffset je offset u Index segmentu gde se nalazi ovaj summary
-	for _, rec := range s.Summary.Records {
-		if bytes.Compare(key, rec.FirstKey) < 0 {
-			continue // Ključ je manji od prvog ključa u ovom summary bloku
-		}
-
-		bm := block_organization.NewBlockManager(conf)
-		dataOffset, err := s.Index.FindDataOffsetWithKey(rec.IndexOffset, key, bm)
-		if err != nil {
-			return nil, fmt.Errorf("error finding data offset with key %s: %w", string(key), err)
-		}
-
-		record, err := s.Data.ReadRecordAtOffset(conf, s.CompressionKey, dataOffset) // Citanje iz Data fajla
-		if err != nil || record.Key == nil {
-			return nil, fmt.Errorf("error reading data record at offset %d: %w", dataOffset, err)
-		}
-
-		if bytes.Equal(record.Key, key) {
-			return record, nil // Vracamo zapis ako je kljuc pronadjen
-		}
+	bm := block_organization.NewBlockManager(conf)
+	prefixIter := s.PrefixIterate(string(key), bm)
+	if prefixIter == nil {
+		return nil, nil // Nema zapisa sa tim prefiksom
 	}
-
-	return nil, nil
+	rec, ok := prefixIter.Next()
+	if !ok || !bytes.Equal(rec.Key, key) {
+		return nil, nil
+	}
+	dr := DataRecord{
+		Key:       rec.Key,
+		Value:     rec.Value,
+		Timestamp: rec.Timestamp,
+		Tombstone: rec.Tombstone,
+	}
+	return &dr, nil
 }
 
 // Pomocna funkcija za PreffixIterate i RangeIterate
