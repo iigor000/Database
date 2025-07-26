@@ -17,7 +17,7 @@ func createTestDatabase(t *testing.T) (*Database, func()) {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
 
-	cfg, err := config.LoadConfigFile("config/config.json")
+	cfg, err := config.LoadConfigFile("../config/config.json")
 	if err != nil {
 		os.RemoveAll(tempDir)
 		t.Fatalf("Failed to load config: %v", err)
@@ -124,8 +124,16 @@ func TestDatabase_Delete(t *testing.T) {
 // TODO: FIX Ne radi kada je useCompression true (potrebno implementirati kompresiju kod LSMTree)
 // TODO: FIX Ne radi kada je singleFile true (neophodno implementirati SingleFile pristup kod Get() u SSTable)
 func TestDatabase_PutMany(t *testing.T) {
-	db, cleanup := createTestDatabase(t)
-	defer cleanup()
+	// db, cleanup := createTestDatabase(t)
+	// defer cleanup()
+	config, err := config.LoadConfigFile("../config/config.json")
+	if err != nil {
+		panic(err)
+	}
+	db, err := NewDatabase(config, "root")
+	if err != nil {
+		panic(err)
+	}
 
 	// Create test data
 	const testCount = 100
