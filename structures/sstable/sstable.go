@@ -458,7 +458,7 @@ func NewEmptySSTable(conf *config.Config, level int, generation int) *SSTable {
 // Get traži ključ u SSTable-u i vraća odgovarajući DataRecord
 // Pomocna funkcija za LSM
 func (s *SSTable) Get(conf *config.Config, key []byte) (*DataRecord, error) {
-
+	println("SSTable Get called for key:", string(key))
 	// Proveri Bloom filter pre pretrage
 	if !s.Filter.Read(key) {
 		return nil, nil
@@ -476,8 +476,8 @@ func (s *SSTable) Get(conf *config.Config, key []byte) (*DataRecord, error) {
 	if prefixIter == nil {
 		return nil, nil // Nema zapisa sa tim prefiksom
 	}
-	rec, ok := prefixIter.Next()
-	if !ok || !bytes.Equal(rec.Key, key) {
+	rec, _ := prefixIter.Next()
+	if !bytes.Equal(rec.Key, key) {
 		return nil, nil
 	}
 	dr := DataRecord{

@@ -151,6 +151,7 @@ func TestDatabase_PutMany(t *testing.T) {
 		if !found {
 			t.Errorf("Key %s not found", k)
 		}
+
 		if string(storedValue) != string(v) {
 			t.Errorf("Value mismatch for key %s, expected %q got %q", k, v, storedValue)
 		}
