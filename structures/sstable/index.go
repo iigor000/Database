@@ -175,7 +175,7 @@ func (ib *Index) FindDataOffsetWithKey(indexOffset int, key []byte, bm *block_or
 			return -1, fmt.Errorf("key not found in index")
 		}
 		if err := indexRecord.Deserialize(serlzdIndexRec); err != nil {
-			println("Error deserializing index record:", err)
+			//println("Error deserializing index record:", err)
 			return -1, fmt.Errorf("error deserializing index record: %w", err)
 		}
 		cmp := bytes.Compare(indexRecord.Key, key)
@@ -187,7 +187,6 @@ func (ib *Index) FindDataOffsetWithKey(indexOffset int, key []byte, bm *block_or
 			if found != -1 {
 				return found, nil // Vracamo poslednji pronadjeni ofset ako je kljuc manji od trenutnog
 			}
-			println("Key was not found in index, key is greater than current key")
 			return -1, fmt.Errorf("key not found in index")
 		}
 		for i := 1; i < 1000; i++ {
@@ -227,10 +226,11 @@ func (ib *Index) FindDataOffsetWithPrefix(indexOffset int, key []byte, bm *block
 		if bytes.HasPrefix(indexRecord.Key, []byte(key)) {
 			return indexRecord.Offset, nil
 		}
-
-		bnum++
-		if indexOffset > len(ib.Records) {
-			return -1, fmt.Errorf("key not found in index")
+		for i := 1; i < 1000; i++ {
+			if len(serlzdIndexRec) == i*bm.BlockSize {
+				bnum += i
+				break
+			}
 		}
 	}
 	return -1, fmt.Errorf("key not found in index")

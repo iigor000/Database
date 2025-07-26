@@ -202,10 +202,19 @@ func TestSSTableIterate(t *testing.T) {
 			break // No more records
 		}
 		println("Key:", string(entry.Key), "Value:", string(entry.Value), "Timestamp:", entry.Timestamp, "Tombstone:", entry.Tombstone)
+		keyCopy := make([]byte, len(entry.Key))
+		copy(keyCopy, entry.Key)
+
+		found := sstable.Filter.Read(keyCopy)
+		if !found {
+			println("Key not found in filter:", string(entry.Key))
+		} else {
+			println("Key found in filter:", string(entry.Key))
+		}
 	}
 	// Test PrefixIterate
 	println("Testing PrefixIterate...")
-	prefix := "key3"
+	prefix := "key5"
 	prefixIter := sstable.PrefixIterate(prefix, bm)
 	if prefixIter == nil {
 		t.Fatal("Failed to create Prefix iterator")

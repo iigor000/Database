@@ -220,7 +220,6 @@ func (s *Summary) FindSummaryRecordWithKey(key string) (SummaryRecord, error) {
 		if bytes.HasPrefix(s.Records[0].FirstKey, []byte(key)) {
 			return s.Records[0], nil
 		}
-		println("No summary record found for key:", key)
 		return SummaryRecord{}, fmt.Errorf("no summary record found for key: %s", key)
 	}
 	return s.Records[resultIdx], nil

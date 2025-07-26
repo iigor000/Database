@@ -27,7 +27,9 @@ func Get(conf *config.Config, key []byte) (*sstable.DataRecord, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		var record *sstable.DataRecord = nil
+
 		for _, table := range tables {
 
 			rec, _ := table.Get(conf, key)

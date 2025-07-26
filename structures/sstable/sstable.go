@@ -460,7 +460,9 @@ func NewEmptySSTable(conf *config.Config, level int, generation int) *SSTable {
 func (s *SSTable) Get(conf *config.Config, key []byte) (*DataRecord, error) {
 	//println("SSTable Get called for key:", string(key))
 	// Proveri Bloom filter pre pretrage
-	if !s.Filter.Read(key) {
+	keyCopy := make([]byte, len(key))
+	copy(keyCopy, key)
+	if !s.Filter.Read(keyCopy) {
 		return nil, nil
 	}
 
@@ -509,7 +511,6 @@ func (s *SSTable) ReadRecordWithKey(bm *block_organization.BlockManager, blockNu
 	} else {
 		dataOffset, err = s.Index.FindDataOffsetWithPrefix(sumRec.IndexOffset, []byte(prefix), bm)
 		if err != nil {
-			//fmt.Println("Error finding data offset with key:", prefix, "Error:", err)
 			return adapter.MemtableEntry{}, -1
 		}
 	}
