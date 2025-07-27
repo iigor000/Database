@@ -114,7 +114,7 @@ func (db *Database) put(key string, value []byte) error {
 		}
 
 		// Proverava uslov za kompakciju i vrši kompakciju ako je potrebno (počinje proveru od prvog nivoa)
-		// lsmtree.Compact(db.config)
+		// lsmtree.Compact(db.config, db.compression)
 
 		recordsToCache := db.memtables.Memtables[0].GetAllEntries()
 
@@ -184,7 +184,7 @@ func (db *Database) get(key string) ([]byte, bool, error) {
 		return nil, false, nil
 	}
 
-	record, err := lsmtree.Get(db.config, keyByte)
+	record, err := lsmtree.Get(db.config, keyByte, db.compression)
 	if err != nil {
 		return nil, false, err
 	} else {

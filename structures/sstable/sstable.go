@@ -386,9 +386,16 @@ func WriteSSTable(sstable *SSTable, dir string, conf *config.Config) {
 
 	// Write Data
 	dataPath := CreateFileName(path, sstable.Gen, "Data", "db")
-	_, err = sstable.Data.WriteData(dataPath, conf, sstable.CompressionKey)
-	if err != nil {
-		panic("Error writing data to file: " + err.Error())
+	if conf.SSTable.UseCompression {
+		_, err = sstable.Data.WriteData(dataPath, conf, sstable.CompressionKey)
+		if err != nil {
+			panic("Error writing data to file: " + err.Error())
+		}
+	} else {
+		_, err = sstable.Data.WriteData(dataPath, conf, nil)
+		if err != nil {
+			panic("Error writing data to file: " + err.Error())
+		}
 	}
 
 	// Write Index

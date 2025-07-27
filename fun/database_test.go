@@ -122,8 +122,6 @@ func TestDatabase_Delete(t *testing.T) {
 	}
 }
 
-// TODO: FIX Ne radi kada je useCompression true (potrebno implementirati kompresiju kod LSMTree)
-// TODO: FIX Ne radi kada je singleFile true (neophodno implementirati SingleFile pristup kod Get() u SSTable)
 func TestDatabase_PutMany(t *testing.T) {
 	// db, cleanup := createTestDatabase(t)
 	// defer cleanup()
@@ -161,7 +159,7 @@ func TestDatabase_PutMany(t *testing.T) {
 			UseCompression:   false,
 			SummaryLevel:     10,
 			SstableDirectory: filepath.Join(dataDir, "sstable"),
-			SingleFile:       true,
+			SingleFile:       false,
 		},
 		Cache: config.CacheConfig{
 			Capacity: 1000,
