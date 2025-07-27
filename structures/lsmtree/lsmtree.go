@@ -12,25 +12,35 @@ import (
 
 	"github.com/iigor000/database/config"
 	"github.com/iigor000/database/structures/bloomfilter"
+	"github.com/iigor000/database/structures/compression"
 	"github.com/iigor000/database/structures/merkle"
 	"github.com/iigor000/database/structures/sstable"
 )
 
+type SSTableReference struct {
+	Level int // Nivo SSTable-a
+	Gen   int // Generacija SSTable-a
+}
+
 // Get traži vrednost za dati ključ u LSM stablu
 // Vraća najnoviji DataRecord ukoliko je pronađen (na najnižem LSM nivou),
 // Ako je isti key pronađen u više SSTable-ova, vraća vrednost sa najnovijim timestamp-om
-func Get(conf *config.Config, key []byte) (*sstable.DataRecord, error) {
+func Get(conf *config.Config, key []byte, dict *compression.Dictionary) (*sstable.DataRecord, error) {
 	maxLevel := conf.LSMTree.MaxLevel
 
 	for level := 1; level < maxLevel; level++ {
-		tables, err := getSSTablesByLevel(conf, level)
+		refs, err := getSSTableReferences(conf, level)
 		if err != nil {
 			return nil, err
 		}
 
 		var record *sstable.DataRecord = nil
 
-		for _, table := range tables {
+		for _, ref := range refs {
+			table, err := sstable.StartSSTable(ref.Level, ref.Gen, conf, dict)
+			if err != nil {
+				return nil, fmt.Errorf("failed to start SSTable for level %d, gen %d: %w", ref.Level, ref.Gen, err)
+			}
 
 			rec, _ := table.Get(conf, key)
 
@@ -78,8 +88,8 @@ func GetNextSSTableGeneration(conf *config.Config, level int) int {
 	return maxGen + 1 // Vraća sledeću generaciju
 }
 
-// getSSTablesByLevel vraća sve SSTable-ove na datom nivou, sortirane po generaciji
-func getSSTablesByLevel(conf *config.Config, level int) ([]*sstable.SSTable, error) {
+// getSSTableReferences vraća sve SSTable-ove na datom nivou, sortirane po generaciji
+func getSSTableReferences(conf *config.Config, level int) ([]*SSTableReference, error) {
 	dir := fmt.Sprintf("%s/%d", conf.SSTable.SstableDirectory, level)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -90,7 +100,7 @@ func getSSTablesByLevel(conf *config.Config, level int) ([]*sstable.SSTable, err
 		return nil, fmt.Errorf("failed to read level %d directory '%s' : %w", level, dir, err)
 	}
 
-	var tables []*sstable.SSTable
+	var refs []*SSTableReference
 
 	for _, entry := range entries {
 		if entry.IsDir() {
@@ -104,48 +114,44 @@ func getSSTablesByLevel(conf *config.Config, level int) ([]*sstable.SSTable, err
 			singlefile := filepath.Join(genDir, fmt.Sprintf("usertable-%06d-SSTable.db", gen))
 
 			if sstable.FileExists(tocPath) || sstable.FileExists(singlefile) {
-				table, err := sstable.StartSSTable(level, gen, conf, nil)
-				if err != nil {
-					return nil, fmt.Errorf("failed to start SSTable for level %d generation %d: %w", level, gen, err)
-				}
-				tables = append(tables, table)
+				refs = append(refs, &SSTableReference{Level: level, Gen: gen})
 			}
 
 		}
 	}
 
-	sortSSTablesByGen(tables)
-	return tables, err
+	sortReferencesByGen(refs, false) // Sortiraj po generaciji u opadajućem redosledu (najnoviji podaci su kod većih generacija)
+	return refs, err
 }
 
-// sortSSTablesByGen sortira SSTable-ove po generaciji
-// Ako je reverse == true, sortira u opadajućem redosledu
-func sortSSTablesByGen(tables []*sstable.SSTable, reverse ...bool) {
-	inAscendingOrder := len(reverse) == 0 || reverse[0]
+// sortReferencesByGen sortira SSTableReference-ove po generaciji
+// Ako je ascending == true, sortira u rastućem redosledu
+func sortReferencesByGen(refs []*SSTableReference, ascending ...bool) {
+	inAscendingOrder := len(ascending) == 0 || ascending[0]
 
 	if inAscendingOrder {
 		// sortiraj u rastućem redosledu
-		sort.Slice(tables, func(i, j int) bool {
-			return tables[i].Gen < tables[j].Gen
+		sort.Slice(refs, func(i, j int) bool {
+			return refs[i].Gen < refs[j].Gen
 		})
 	} else {
 		// sortiraj u opadajućem redosledu
-		sort.Slice(tables, func(i, j int) bool {
-			return tables[i].Gen > tables[j].Gen
+		sort.Slice(refs, func(i, j int) bool {
+			return refs[i].Gen > refs[j].Gen
 		})
 	}
 }
 
 // Compact pokreće kompakciju LSM stabla spajanjem SSTable-ova
 // Kompakcija se vrši na osnovu podešavanja u konfiguraciji samo ako je ostvaren uslov za kompakciju
-func Compact(conf *config.Config) error {
+func Compact(conf *config.Config, dict *compression.Dictionary) error {
 	if conf.LSMTree.CompactionAlgorithm == "size_tiered" {
-		err := sizeTieredCompaction(conf)
+		err := sizeTieredCompaction(conf, dict)
 		if err != nil {
 			return fmt.Errorf("error during size-tiered compaction: %w", err)
 		}
 	} else if conf.LSMTree.CompactionAlgorithm == "leveled" {
-		err := leveledCompaction(conf, 1)
+		err := leveledCompaction(conf, 1, dict)
 		if err != nil {
 			return fmt.Errorf("error during leveled compaction: %w", err)
 		}
@@ -156,7 +162,7 @@ func Compact(conf *config.Config) error {
 }
 
 // sizeTieredCompaction vrši kompakciju na osnovu broja SSTable-ova na nivou
-func sizeTieredCompaction(conf *config.Config) error {
+func sizeTieredCompaction(conf *config.Config, dict *compression.Dictionary) error {
 	maxLevel := conf.LSMTree.MaxLevel
 
 	level := 1
@@ -164,22 +170,29 @@ func sizeTieredCompaction(conf *config.Config) error {
 	for level < maxLevel {
 		maxSSTablesPerLevel := conf.LSMTree.MaxTablesPerLevel
 
-		tables, err := getSSTablesByLevel(conf, level)
+		refs, err := getSSTableReferences(conf, level)
 		if err != nil {
-			return fmt.Errorf("error getting SSTables for level %d: %v", level, err)
+			return fmt.Errorf("error getting SSTable references for level %d: %v", level, err)
 		}
+		sortReferencesByGen(refs, true) // Sortiraj po generaciji u rastućem redosledu (prvo kompaktujemo najstarije SSTable-ove)
 
-		if len(tables) == 0 || len(tables) == 1 {
+		if len(refs) == 0 || len(refs) == 1 {
 			return nil // Nema SSTable-ova na ovom nivou ili ima samo jedan, ništa ne radimo
 		}
 
-		for len(tables) >= maxSSTablesPerLevel {
-			sst1 := tables[0]
-			sst2 := tables[1]
+		for len(refs) >= maxSSTablesPerLevel {
+			sst1, err := sstable.StartSSTable(refs[0].Level, refs[0].Gen, conf, dict)
+			if err != nil {
+				return fmt.Errorf("failed to start SSTable for level %d, gen %d: %w", refs[0].Level, refs[0].Gen, err)
+			}
+			sst2, err := sstable.StartSSTable(refs[1].Level, refs[1].Gen, conf, dict)
+			if err != nil {
+				return fmt.Errorf("failed to start SSTable for level %d, gen %d: %w", refs[1].Level, refs[1].Gen, err)
+			}
 
 			// Spaja prve dve tabele i kreira novu SSTable na sledećem nivou
 			// briše stare SSTable-ove
-			err := mergeTables(conf, level+1, sst1, sst2)
+			err = mergeTables(conf, level+1, sst1, sst2)
 			if err != nil {
 				return fmt.Errorf("error merging tables for level %d: %w", level, err)
 			}
@@ -191,9 +204,9 @@ func sizeTieredCompaction(conf *config.Config) error {
 	return nil
 }
 
-// needCompaction proverava da li je potrebno izvršiti kompakciju na datom nivou (za Size-Tiered kompakciju)
-func needCompaction(conf *config.Config, level int, tables []*sstable.SSTable) (bool, error) {
-	if len(tables) == 0 {
+// needCompaction proverava da li je potrebno izvršiti kompakciju na datom nivou (za Leveled kompakciju)
+func needCompaction(conf *config.Config, level int, refs []*SSTableReference) (bool, error) {
+	if len(refs) == 0 {
 		return false, nil
 	}
 
@@ -201,8 +214,14 @@ func needCompaction(conf *config.Config, level int, tables []*sstable.SSTable) (
 
 	totalDataSize := 0
 	// Proverava da li je data block size na nivou veći od maksimalnog
-	for _, table := range tables {
-		totalDataSize += int(table.Data.DataFile.SizeOnDisk)
+	for _, ref := range refs {
+		path := fmt.Sprintf("%s/%d/%d", conf.SSTable.SstableDirectory, ref.Level, ref.Gen)
+		if conf.SSTable.SingleFile {
+			path = sstable.CreateFileName(fmt.Sprintf("%s/%d", conf.SSTable.SstableDirectory, ref.Level), ref.Gen, "SSTable", "db")
+		}
+		size := sstable.CalculateDataSize(path, conf)
+
+		totalDataSize += int(size)
 
 		if totalDataSize > maxSSTablesSize {
 			return true, nil // Ako je ukupna veličina podataka veća od maksimalne, potrebno je izvršiti kompakciju
@@ -214,15 +233,20 @@ func needCompaction(conf *config.Config, level int, tables []*sstable.SSTable) (
 
 // getOverlappingSSTables vraća sve SSTable-ove na sledećem nivou koji se preklapaju sa datim SSTable-om
 // Preklapanje se vrši na osnovu ključeva u Summary-ju
-func getOverlappingSSTables(conf *config.Config, nextLevel int, minSSTKey []byte, maxSSTKey []byte) ([]*sstable.SSTable, error) {
-	nextLevelTables, err := getSSTablesByLevel(conf, nextLevel)
+func getOverlappingSSTables(conf *config.Config, nextLevel int, minSSTKey []byte, maxSSTKey []byte, dict *compression.Dictionary) ([]*sstable.SSTable, error) {
+	refs, err := getSSTableReferences(conf, nextLevel)
 	if err != nil {
-		return nil, fmt.Errorf("error getting SSTables for level %d: %v", nextLevel, err)
+		return nil, fmt.Errorf("error getting SSTable references for level %d: %v", nextLevel, err)
 	}
 
 	var overlapping []*sstable.SSTable
 
-	for _, table := range nextLevelTables {
+	for _, ref := range refs {
+		table, err := sstable.StartSSTable(ref.Level, ref.Gen, conf, dict)
+		if err != nil {
+			return nil, fmt.Errorf("failed to start SSTable for level %d, gen %d: %w", ref.Level, ref.Gen, err)
+		}
+
 		minKey := table.Summary.FirstKey
 		maxKey := table.Summary.LastKey
 
@@ -239,17 +263,17 @@ func getOverlappingSSTables(conf *config.Config, nextLevel int, minSSTKey []byte
 
 // leveledCompaction vrši kompakciju spram granice za nivo (maxSSTablesSize = BaseSSTableLimit * LevelSizeMultiplier^(Level))
 // Vršimo kompakciju na ovom nivou sve dok ne dostigne Size ispod granice, pa tek onda na sledećem nivou
-func leveledCompaction(conf *config.Config, level int) error {
+func leveledCompaction(conf *config.Config, level int, dict *compression.Dictionary) error {
 	compactionDone := false
 
 	// Vršimo kompakciju na ovom nivou sve dok ne dostigne određeni Size, pa tek onda na sledećem nivou
 	for ; ; compactionDone = true {
-		tables, err := getSSTablesByLevel(conf, level)
+		refs, err := getSSTableReferences(conf, level)
 		if err != nil {
-			return fmt.Errorf("error getting SSTables for level %d: %w", level, err)
+			return fmt.Errorf("error getting SSTable references for level %d: %w", level, err)
 		}
 
-		toCompact, err := needCompaction(conf, level, tables)
+		toCompact, err := needCompaction(conf, level, refs)
 		if err != nil {
 			return err
 		}
@@ -258,13 +282,16 @@ func leveledCompaction(conf *config.Config, level int) error {
 			break // Nema (više) potrebe za kompakcijom na ovom nivou
 		}
 
-		if len(tables) == 0 {
+		if len(refs) == 0 {
 			return nil // Nema SSTable-ova na ovom nivou, ništa ne radimo
 		}
 
-		sst := tables[0] // Uzmi prvi SSTable za kompakciju
+		sst, err := sstable.StartSSTable(refs[0].Level, refs[0].Gen, conf, dict)
+		if err != nil {
+			return fmt.Errorf("failed to start SSTable for level %d, gen %d: %w", refs[0].Level, refs[0].Gen, err)
+		}
 
-		overlapping, err := getOverlappingSSTables(conf, level+1, sst.Summary.FirstKey, sst.Summary.LastKey)
+		overlapping, err := getOverlappingSSTables(conf, level+1, sst.Summary.FirstKey, sst.Summary.LastKey, dict)
 		if err != nil {
 			return fmt.Errorf("error getting overlapping SSTables for level %d: %w", level+1, err)
 		}
@@ -278,7 +305,7 @@ func leveledCompaction(conf *config.Config, level int) error {
 	}
 
 	if compactionDone {
-		leveledCompaction(conf, level+1)
+		leveledCompaction(conf, level+1, dict)
 	}
 
 	return nil

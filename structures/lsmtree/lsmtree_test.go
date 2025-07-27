@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/iigor000/database/config"
+	"github.com/iigor000/database/structures/compression"
 	"github.com/iigor000/database/structures/sstable"
 )
 
@@ -13,24 +14,45 @@ func createTestConfig(baseDir string) *config.Config {
 		Block: config.BlockConfig{
 			BlockSize: 4096,
 		},
-		Cache: config.CacheConfig{
-			Capacity: 10,
+		Wal: config.WalConfig{
+			WalSegmentSize: 100,
+			WalDirectory:   "data",
 		},
 		Memtable: config.MemtableConfig{
 			NumberOfMemtables: 1,
-			NumberOfEntries:   2, // forsira flush nakon 2 upisa
+			NumberOfEntries:   2,
 			Structure:         "skiplist",
+		},
+		Skiplist: config.SkiplistConfig{
+			MaxHeight: 16,
+		},
+		BTree: config.BTreeConfig{
+			MinSize: 16,
 		},
 		SSTable: config.SSTableConfig{
 			UseCompression:   false,
-			SummaryLevel:     1,
-			SstableDirectory: baseDir,
+			SummaryLevel:     10,
+			SstableDirectory: "data/sstable",
+			SingleFile:       false,
+		},
+		Cache: config.CacheConfig{
+			Capacity: 100,
 		},
 		LSMTree: config.LSMTreeConfig{
-			MaxLevel:            2,
+			MaxLevel:            5,
 			CompactionAlgorithm: "size_tiered",
-			BaseSSTableLimit:    4,
-			LevelSizeMultiplier: 2,
+			// "leveled" KOMPAKCIJA
+			BaseSSTableLimit:    10000, // Bazni limit SSTable-a (DataBlock je velicine 4096, 8192 ili 16384 bajta)
+			LevelSizeMultiplier: 10,    // Multiplikator velicine nivoa (granica za prvi nivo je BaseSSTableLimit pomnožena sa 10, kod drugog sa 100, itd.)
+			// "size_tiered" KOMPAKCIJA
+			MaxTablesPerLevel: 8, // Maksimalan broj SSTable-ova po nivou
+		},
+		TokenBucket: config.TokenBucketConfig{
+			StartTokens:     1000, // Broj tokena na pocetku
+			RefillIntervalS: 120,  // Interval refilovanja tokena u sekundama
+		},
+		Compression: config.CompressionConfig{
+			DictionaryDir: "data/compression_dict",
 		},
 	}
 }
@@ -44,14 +66,21 @@ func createSSTableWithData(t *testing.T, conf *config.Config, level int, gen int
 	}
 }
 
+// TODO: fix testove
+
 func TestGetExistingKey(t *testing.T) {
 	tmp := t.TempDir()
 	conf := createTestConfig(tmp)
 
+	dict, err := compression.Read(conf.Compression.DictionaryDir)
+	if err != nil {
+		t.Fatalf("Failed to read compression dictionary: %v", err)
+	}
+
 	// Napravi SSTable sa jednim zapisom
 	createSSTableWithData(t, conf, 1, 1, "key1", "value1")
 
-	rec, err := Get(conf, []byte("key1"))
+	rec, err := Get(conf, []byte("key1"), dict)
 	if err != nil {
 		t.Errorf("Unexpected error in Get: %v", err)
 	}
@@ -64,10 +93,15 @@ func TestGetMissingKey(t *testing.T) {
 	tmp := t.TempDir()
 	conf := createTestConfig(tmp)
 
+	dict, err := compression.Read(conf.Compression.DictionaryDir)
+	if err != nil {
+		t.Fatalf("Failed to read compression dictionary: %v", err)
+	}
+
 	// Napravi SSTable sa jednim zapisom
 	createSSTableWithData(t, conf, 1, 1, "key1", "value1")
 
-	rec, err := Get(conf, []byte("notfound"))
+	rec, err := Get(conf, []byte("notfound"), dict)
 	if err != nil {
 		t.Errorf("Unexpected error in Get: %v", err)
 	}
@@ -80,22 +114,27 @@ func TestCompact(t *testing.T) {
 	tmp := t.TempDir()
 	conf := createTestConfig(tmp)
 
+	dict, err := compression.Read(conf.Compression.DictionaryDir)
+	if err != nil {
+		t.Fatalf("Failed to read compression dictionary: %v", err)
+	}
+
 	// Napravi dva SSTable sa različitim ključevima
 	createSSTableWithData(t, conf, 1, 1, "key1", "value1")
 	createSSTableWithData(t, conf, 1, 2, "key2", "value2")
 
-	err := Compact(conf)
+	err = Compact(conf, dict)
 	if err != nil {
 		t.Errorf("Compact failed: %v", err)
 	}
 
 	// Get bi trebalo da radi i nakon kompakcije
-	rec1, _ := Get(conf, []byte("key1"))
+	rec1, _ := Get(conf, []byte("key1"), dict)
 	if rec1 == nil || string(rec1.Value) != "value1" {
 		t.Errorf("Expected key1 to return value1, got %+v", rec1)
 	}
 
-	rec2, _ := Get(conf, []byte("key2"))
+	rec2, _ := Get(conf, []byte("key2"), dict)
 	if rec2 == nil || string(rec2.Value) != "value2" {
 		t.Errorf("Expected key2 to return value2, got %+v", rec2)
 	}
@@ -105,11 +144,16 @@ func TestMergeKeepsLatestTimestamp(t *testing.T) {
 	tmp := t.TempDir()
 	conf := createTestConfig(tmp)
 
+	dict, err := compression.Read(conf.Compression.DictionaryDir)
+	if err != nil {
+		t.Fatalf("Failed to read compression dictionary: %v", err)
+	}
+
 	now := time.Now().UnixNano()
 	old := now - 1000
 
 	// Napravi SSTable sa DataRecord sa starijim timestampom
-	err := buildSSTableFromRecords([]*sstable.DataRecord{
+	err = buildSSTableFromRecords([]*sstable.DataRecord{
 		{Key: []byte("dup"), Value: []byte("old"), Timestamp: old},
 	}, conf, 1, 1)
 	if err != nil {
@@ -124,12 +168,12 @@ func TestMergeKeepsLatestTimestamp(t *testing.T) {
 		t.Fatalf("Failed to create SSTable: %v", err)
 	}
 
-	err = Compact(conf)
+	err = Compact(conf, dict)
 	if err != nil {
 		t.Fatalf("Compact failed: %v", err)
 	}
 
-	rec, err := Get(conf, []byte("dup"))
+	rec, err := Get(conf, []byte("dup"), dict)
 	if err != nil {
 		t.Errorf("Get failed after merge: %v", err)
 	}
@@ -142,10 +186,15 @@ func TestGetOverlappingSSTables(t *testing.T) {
 	tmp := t.TempDir()
 	conf := createTestConfig(tmp)
 
+	dict, err := compression.Read(conf.Compression.DictionaryDir)
+	if err != nil {
+		t.Fatalf("Failed to read compression dictionary: %v", err)
+	}
+
 	// Napravi dva SSTable sa preklapajućim ključevima
 	createSSTableWithData(t, conf, 1, 1, "key1", "value1")
 	createSSTableWithData(t, conf, 1, 2, "key1", "value2")
-	rec, err := Get(conf, []byte("key1"))
+	rec, err := Get(conf, []byte("key1"), dict)
 	if err != nil {
 		t.Errorf("Unexpected error in Get: %v", err)
 	}
