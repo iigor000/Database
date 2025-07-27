@@ -7,6 +7,7 @@ import (
 
 	"github.com/iigor000/database/config"
 	"github.com/iigor000/database/structures/adapter"
+	"github.com/iigor000/database/structures/block_organization"
 	"github.com/iigor000/database/structures/cache"
 	"github.com/iigor000/database/structures/compression"
 	writeaheadlog "github.com/iigor000/database/structures/writeAheadLog"
@@ -20,13 +21,14 @@ import (
 //TODO: Dodati (wal) i kompresiju kad budu zavrseni
 
 type Database struct {
-	wal            *writeaheadlog.WAL
-	compression    *compression.Dictionary
-	memtables      *memtable.Memtables
-	config         *config.Config
-	cache          *cache.Cache
-	username       string
-	lastFlushedGen int // poslednja generacija koja je flush-ovana na disk
+	wal               *writeaheadlog.WAL
+	compression       *compression.Dictionary
+	memtables         *memtable.Memtables
+	config            *config.Config
+	cache             *cache.Cache
+	username          string
+	lastFlushedGen    int // poslednja generacija koja je flush-ovana na disk
+	CacheBlockManager *block_organization.CachedBlockManager
 }
 
 func NewDatabase(config *config.Config, username string) (*Database, error) {
@@ -50,19 +52,27 @@ func NewDatabase(config *config.Config, username string) (*Database, error) {
 			memtables.Update(record.Key, record.Value, record.Timestamp, false)
 		}
 	}
-	// TODO: Treba da se ucita BloomFilter i Summary iz SSTable-a
+	//?? TODO: Treba da se ucita BloomFilter i Summary iz SSTable-a
 	cache := cache.NewCache(config)
 	dict, err := compression.Read(config.Compression.DictionaryDir)
 	if err != nil {
 		return nil, err
 	}
+
+	bm := block_organization.NewBlockManager(config)
+	bc := block_organization.NewBlockCache(config)
+	cbm := &block_organization.CachedBlockManager{
+		BM: bm,
+		C:  bc,
+	}
 	return &Database{
-		wal:         wal,
-		memtables:   memtables,
-		config:      config,
-		cache:       cache,
-		username:    username,
-		compression: dict,
+		wal:               wal,
+		memtables:         memtables,
+		config:            config,
+		cache:             cache,
+		username:          username,
+		compression:       dict,
+		CacheBlockManager: cbm,
 	}, nil
 }
 
@@ -106,7 +116,7 @@ func (db *Database) put(key string, value []byte) error {
 		// Flush Memtable na disk
 		println("Flushing Memtable to disk...")
 		println("Gen to Flush:", db.memtables.GenToFlush)
-		sstable.FlushSSTable(db.config, *db.memtables.Memtables[0], db.memtables.GenToFlush, db.compression)
+		sstable.FlushSSTable(db.config, *db.memtables.Memtables[0], db.memtables.GenToFlush, db.compression, db.CacheBlockManager)
 
 		db.lastFlushedGen = db.memtables.GenToFlush // azuriramo poslednju flushovanu generaciju
 		if err := db.wal.RemoveSegmentsUpTo(db.calculateLWM()); err != nil {

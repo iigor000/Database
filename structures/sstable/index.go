@@ -40,11 +40,10 @@ func NewIndexRecord(k []byte, offs int) IndexRecord {
 	return record
 }
 
-func (ib *Index) WriteIndex(path string, conf *config.Config) error {
-	bm := block_organization.NewBlockManager(conf)
+func (ib *Index) WriteIndex(path string, conf *config.Config, cbm *block_organization.CachedBlockManager) error {
 	rec := 0
 	for _, record := range ib.Records {
-		i, err := record.WriteIndexRecord(path, bm)
+		i, err := record.WriteIndexRecord(path, cbm)
 		if rec == 0 {
 			ib.IndexFile.Offset = int64(i) * int64(conf.Block.BlockSize)
 		}
@@ -60,9 +59,9 @@ func (ib *Index) WriteIndex(path string, conf *config.Config) error {
 	return nil
 }
 
-func (ir *IndexRecord) WriteIndexRecord(path string, bm *block_organization.BlockManager) (int, error) {
+func (ir *IndexRecord) WriteIndexRecord(path string, bm *block_organization.CachedBlockManager) (int, error) {
 	serializedData, _ := ir.Serialize()
-	return bm.AppendBlock(path, serializedData)
+	return bm.Append(path, serializedData)
 }
 
 func (ir *IndexRecord) Serialize() ([]byte, int) {
@@ -75,8 +74,7 @@ func (ir *IndexRecord) Serialize() ([]byte, int) {
 }
 
 // ReadIndexBlock cita IndexBlock iz fajla
-func ReadIndex(path string, conf *config.Config, startOffset, endOffset int64) (*Index, error) {
-	bm := block_organization.NewBlockManager(conf)
+func ReadIndex(path string, conf *config.Config, startOffset, endOffset int64, bm *block_organization.CachedBlockManager) (*Index, error) {
 	blockNum := int(startOffset / int64(conf.Block.BlockSize)) // Pocinjemo od bloka koji sadrzi startOffset
 	endBlock := int(endOffset / int64(conf.Block.BlockSize))   // Kraj bloka koji sadrzi endOffset
 	if endOffset <= startOffset {
@@ -85,7 +83,7 @@ func ReadIndex(path string, conf *config.Config, startOffset, endOffset int64) (
 	indexs := &Index{}
 
 	for {
-		block, err := bm.ReadBlock(path, blockNum)
+		block, err := bm.Read(path, blockNum)
 		if err != nil {
 			if err.Error() == "EOF" {
 				break // Kraj fajla
@@ -97,7 +95,7 @@ func ReadIndex(path string, conf *config.Config, startOffset, endOffset int64) (
 		}
 		blockNum1 := blockNum
 		for i := 1; i < 1000; i++ {
-			if len(block) == i*conf.Block.BlockSize {
+			if len(block)+(i*1) <= i*conf.Block.BlockSize {
 				blockNum1 += i
 				break
 			}
@@ -149,20 +147,20 @@ func (ir *IndexRecord) Deserialize(data []byte) error {
 
 // Pomocna funkcija za Iterate
 // Index segment nije ucitan iz fajla
-func (ib *Index) FindDataOffsetWithKey(indexOffset int, key []byte, bm *block_organization.BlockManager) (int, error) {
+func (ib *Index) FindDataOffsetWithKey(indexOffset int, key []byte, bm *block_organization.CachedBlockManager) (int, error) {
 	indexRecord := IndexRecord{}
 	found := -1
-	bnum := indexOffset / bm.BlockSize
+	bnum := indexOffset / bm.BM.BlockSize
 	for {
 		if ib.IndexFile.SizeOnDisk != -1 {
-			if bnum*bm.BlockSize > int(ib.IndexFile.SizeOnDisk+ib.IndexFile.Offset) {
+			if bnum*bm.BM.BlockSize > int(ib.IndexFile.SizeOnDisk+ib.IndexFile.Offset) {
 				if found != -1 {
 					return found, nil
 				}
 				return -1, fmt.Errorf("key not found in index")
 			}
 		}
-		serlzdIndexRec, err := bm.ReadBlock(ib.IndexFile.Path, bnum)
+		serlzdIndexRec, err := bm.Read(ib.IndexFile.Path, bnum)
 		if err != nil {
 			if err.Error() == "EOF" {
 				break // Kraj fajla
@@ -190,7 +188,7 @@ func (ib *Index) FindDataOffsetWithKey(indexOffset int, key []byte, bm *block_or
 			return -1, fmt.Errorf("key not found in index")
 		}
 		for i := 1; i < 1000; i++ {
-			if len(serlzdIndexRec) == i*bm.BlockSize {
+			if len(serlzdIndexRec)+(i*1) <= i*bm.BM.BlockSize {
 				bnum += i
 				break
 			}
@@ -199,17 +197,17 @@ func (ib *Index) FindDataOffsetWithKey(indexOffset int, key []byte, bm *block_or
 	return -1, fmt.Errorf("key not found in index")
 }
 
-func (ib *Index) FindDataOffsetWithPrefix(indexOffset int, key []byte, bm *block_organization.BlockManager) (int, error) {
+func (ib *Index) FindDataOffsetWithPrefix(indexOffset int, key []byte, bm *block_organization.CachedBlockManager) (int, error) {
 	indexRecord := IndexRecord{}
-	bnum := indexOffset / bm.BlockSize
+	bnum := indexOffset / bm.BM.BlockSize
 
 	for {
 		if ib.IndexFile.SizeOnDisk != -1 {
-			if bnum*bm.BlockSize > int(ib.IndexFile.SizeOnDisk)+int(ib.IndexFile.Offset) {
+			if bnum*bm.BM.BlockSize > int(ib.IndexFile.SizeOnDisk)+int(ib.IndexFile.Offset) {
 				return -1, fmt.Errorf("key not found in index")
 			}
 		}
-		serlzdIndexRec, err := bm.ReadBlock(ib.IndexFile.Path, bnum)
+		serlzdIndexRec, err := bm.Read(ib.IndexFile.Path, bnum)
 		if err != nil {
 			if err.Error() == "EOF" {
 				break // Kraj fajla
@@ -227,7 +225,7 @@ func (ib *Index) FindDataOffsetWithPrefix(indexOffset int, key []byte, bm *block
 			return indexRecord.Offset, nil
 		}
 		for i := 1; i < 1000; i++ {
-			if len(serlzdIndexRec) == i*bm.BlockSize {
+			if len(serlzdIndexRec)+(i*1) <= i*bm.BM.BlockSize {
 				bnum += i
 				break
 			}

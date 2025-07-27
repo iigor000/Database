@@ -76,7 +76,6 @@ func (bm *BlockManager) AppendBlock(filePath string, data []byte) (int, error) {
 		// Ako je duzina manja, onda popunjavamo ostatak bloka nulama
 		data = append(data, make([]byte, bm.BlockSize-len(data))...)
 	}
-
 	file, err := os.OpenFile(filePath, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0644)
 	if err != nil {
 		return 0, err
@@ -97,7 +96,7 @@ func (bm *BlockManager) AppendBlock(filePath string, data []byte) (int, error) {
 func (bm *BlockManager) Write(filePath string, blockNumber int, data []byte) error {
 	// Proveravamo da li je duzina podataka veca od BlockSize, ako jeste deilmo ga na blokove
 	// Prvi bajt svakog bloka je oznaka da li je block krajnji, srednji ili prvi
-	if len(data) > bm.BlockSize+1 {
+	if len(data)*8 > bm.BlockSize+1 {
 		blocks := make([][]byte, 0)
 		for i := 0; i < len(data); i += bm.BlockSize - 1 {
 			end := i + bm.BlockSize - 1
@@ -169,7 +168,6 @@ func (bm *BlockManager) Append(filePath string, data []byte) (int, error) {
 		}
 		return firstBlockNumber, nil
 	}
-
 	block := make([]byte, bm.BlockSize)
 	copy(block[1:], data) // Kopiramo podatke u blok,
 	block[0] = 2          // Poslednji blok
@@ -181,11 +179,12 @@ func (bm *BlockManager) Read(filePath string, blockNumber int) ([]byte, error) {
 	// Citamo blok podataka sa diska
 	data := make([]byte, 0)
 	for {
+
 		block, err := bm.ReadBlock(filePath, blockNumber)
 		if err != nil {
 			return nil, fmt.Errorf("error reading block %d: %w", blockNumber, err)
 		}
-
+		//println(block[0])
 		if block[0] == 2 { // Ako je poslednji blok, vracamo ga
 			data = append(data, block[1:]...) // Dodajemo podatke iz bloka u data
 			return data, nil
@@ -243,6 +242,7 @@ func (cbm *CachedBlockManager) AppendBlock(filePath string, data []byte) (int, e
 
 // Funkcija koja omogucava optimizovano citanje blokova podataka uz pomoc kesiranja cime se ubrzava sam proces
 func (cbm *CachedBlockManager) Read(filePath string, blockNumber int) ([]byte, error) {
+
 	cacheKey := fmt.Sprintf("%s:%d", filePath, blockNumber)
 	if data, isThere := cbm.C.Get(cacheKey); isThere { // Ako blok postoji u kesu, vracamo ga
 		return data, nil

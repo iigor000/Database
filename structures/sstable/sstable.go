@@ -35,7 +35,7 @@ type SSTable struct {
 }
 
 // FlushSSTable kreira SSTable iz Memtable i upisuje je na disk
-func FlushSSTable(conf *config.Config, memtable memtable.Memtable, generation int, dict *compression.Dictionary) *SSTable {
+func FlushSSTable(conf *config.Config, memtable memtable.Memtable, generation int, dict *compression.Dictionary, cbm *block_organization.CachedBlockManager) *SSTable {
 	//Sortiramo memtable.Keys da bismo imali uredjen redosled
 	sort.Slice(memtable.Keys, func(i, j int) bool {
 		return bytes.Compare(memtable.Keys[i], memtable.Keys[j]) < 0
@@ -61,22 +61,21 @@ func FlushSSTable(conf *config.Config, memtable memtable.Memtable, generation in
 
 	sstable.SingleFile = conf.SSTable.SingleFile
 	if sstable.SingleFile {
-		bm := block_organization.NewBlockManager(conf)
 		fm := CreateFileName(path, generation, "SSTable", "db")
-		_, err := bm.AppendBlock(fm, []byte("TOC"))
+		_, err := cbm.AppendBlock(fm, []byte("TOC"))
 		if err != nil {
 			panic("Error creating single file SSTable: " + err.Error())
 		}
 	}
-	sstable.Data = buildData(memtable, conf, generation, path, sstable.SingleFile, dict)
-	sstable.Index = buildIndex(conf, generation, path, sstable.Data, sstable.SingleFile)
-	sstable.Summary = buildSummary(conf, sstable.Index, generation, path, sstable.SingleFile)
-	sstable.Filter = buildBloomFilter(conf, generation, path, sstable.Data, sstable.SingleFile)
-	sstable.Metadata = buildMetadata(generation, path, sstable.Data, sstable.SingleFile, conf)
+	sstable.Data = buildData(memtable, conf, generation, path, sstable.SingleFile, dict, cbm)
+	sstable.Index = buildIndex(conf, generation, path, sstable.Data, sstable.SingleFile, cbm)
+	sstable.Summary = buildSummary(conf, sstable.Index, generation, path, sstable.SingleFile, cbm)
+	sstable.Filter = buildBloomFilter(conf, generation, path, sstable.Data, sstable.SingleFile, cbm)
+	sstable.Metadata = buildMetadata(generation, path, sstable.Data, sstable.SingleFile, conf, cbm)
 	if !sstable.SingleFile {
 		dictPath := CreateFileName(path, generation, "CompressionInfo", "db")
 		// Upisujemo true ili false u fajl da li koristimo kompresiju
-		sstable.WriteCompressionInfo(dictPath, dict, conf)
+		sstable.WriteCompressionInfo(dictPath, dict, conf, cbm)
 		// Upis TOC u fajl
 		toc_path := CreateFileName(path, generation, "TOC", "txt")
 		toc_data := fmt.Sprintf("Generation: %d\nData: %s\nIndex: %s\nSummary: %s\nFilter: %s\nMetadata: %s\nCompression: %s\n",
@@ -90,7 +89,7 @@ func FlushSSTable(conf *config.Config, memtable memtable.Memtable, generation in
 	} else {
 		// Upisujemo sve u jedan fajl
 		path = CreateFileName(path, generation, "SSTable", "db")
-		if err := sstable.WriteSingleFile(path, conf); err != nil {
+		if err := sstable.WriteSingleFile(path, conf, cbm); err != nil {
 			fmt.Printf("Error writing single file SSTable: %v\n", err)
 		}
 	}
@@ -99,27 +98,26 @@ func FlushSSTable(conf *config.Config, memtable memtable.Memtable, generation in
 	return &sstable
 }
 
-func (sstable *SSTable) WriteSingleFile(path string, conf *config.Config) error {
+func (sstable *SSTable) WriteSingleFile(path string, conf *config.Config, cbm *block_organization.CachedBlockManager) error {
 	sstable.Data.DataFile.Offset = int64(1 * conf.Block.BlockSize)
 	sstable.Data.DataFile.SizeOnDisk = sstable.Index.IndexFile.Offset - sstable.Data.DataFile.Offset
 	sstable.Index.IndexFile.SizeOnDisk = sstable.Summary.SummaryFile.Offset - sstable.Index.IndexFile.Offset
-	bm := block_organization.NewBlockManager(conf)
 	serializedFilter := sstable.Filter.Serialize()
-	bn, err := bm.AppendBlock(path, serializedFilter)
+	bn, err := cbm.Append(path, serializedFilter)
 	if err != nil {
 		return fmt.Errorf("error writing filter to file: %w", err)
 	}
-	filterOffset := int64(bn * bm.BlockSize)
+	filterOffset := int64(bn * cbm.BM.BlockSize)
 
 	metadata, err := sstable.Metadata.Serialize()
 	if err != nil {
 		return fmt.Errorf("error serializing metadata: %w", err)
 	}
-	bn, err = bm.AppendBlock(path, metadata)
+	bn, err = cbm.Append(path, metadata)
 	if err != nil {
 		return fmt.Errorf("error writing metadata to file: %w", err)
 	}
-	metadataOffset := int64(bn * bm.BlockSize)
+	metadataOffset := int64(bn * cbm.BM.BlockSize)
 
 	var compressionByte []byte
 	if sstable.UseCompression {
@@ -127,11 +125,11 @@ func (sstable *SSTable) WriteSingleFile(path string, conf *config.Config) error 
 	} else {
 		compressionByte = []byte("No compression")
 	}
-	bn, err = bm.AppendBlock(path, compressionByte)
+	bn, err = cbm.Append(path, compressionByte)
 	if err != nil {
 		return fmt.Errorf("error writing compression info: %w", err)
 	}
-	compressionOffset := int64(bn * bm.BlockSize)
+	compressionOffset := int64(bn * cbm.BM.BlockSize)
 
 	// Upisujemo TOC u fajl
 	offsets := make(map[string]int64)
@@ -141,7 +139,7 @@ func (sstable *SSTable) WriteSingleFile(path string, conf *config.Config) error 
 	offsets["Filter"] = filterOffset
 	offsets["Metadata"] = metadataOffset
 	offsets["Compression"] = compressionOffset
-	_, err = bm.AppendBlock(path, []byte("TOC\n"))
+	_, err = cbm.Append(path, []byte("TOC\n"))
 	if err != nil {
 		return fmt.Errorf("error writing TOC header: %w", err)
 	}
@@ -150,37 +148,35 @@ func (sstable *SSTable) WriteSingleFile(path string, conf *config.Config) error 
 		//println("Writing TOC entry:", key, "at offset", offset)
 		serializedToc = append(serializedToc, []byte(fmt.Sprintf("%s: %d\n", key, offset))...)
 	}
-	err = bm.WriteBlock(path, 0, serializedToc)
+	err = cbm.WriteBlock(path, 0, serializedToc)
 	if err != nil {
 		return fmt.Errorf("error writing TOC entries: %w", err)
 	}
 	return nil
 }
 
-func (s *SSTable) WriteCompressionInfo(path string, dict *compression.Dictionary, conf *config.Config) {
-	bm := block_organization.NewBlockManager(conf)
+func (s *SSTable) WriteCompressionInfo(path string, dict *compression.Dictionary, conf *config.Config, bm *block_organization.CachedBlockManager) {
 	data := []byte{0}
 	if s.UseCompression && dict != nil && !dict.IsEmpty() {
 		data[0] = 1
 	} else {
 		data[0] = 0
 	}
-	_, err := bm.AppendBlock(path, data)
+	_, err := bm.Append(path, data)
 	if err != nil {
 		panic("Error writing compression info to file: " + err.Error())
 	}
 }
 
-func ReadCompressionInfo(path string, conf *config.Config) (bool, error) {
-	bm := block_organization.NewBlockManager(conf)
-	block, err := bm.ReadBlock(path, 0)
+func ReadCompressionInfo(path string, conf *config.Config, bm *block_organization.CachedBlockManager) (bool, error) {
+	block, err := bm.Read(path, 0)
 	if err != nil {
 		return false, fmt.Errorf("error reading compression info from file %s: %w", path, err)
 	}
 	return block[0] == 1, nil
 }
 
-func buildData(mem memtable.Memtable, conf *config.Config, gen int, path string, singleFile bool, dict *compression.Dictionary) *Data {
+func buildData(mem memtable.Memtable, conf *config.Config, gen int, path string, singleFile bool, dict *compression.Dictionary, cbm *block_organization.CachedBlockManager) *Data {
 	db := &Data{}
 	for i := 0; i < mem.Capacity; i++ {
 		entry, found := mem.Structure.Search(mem.Keys[i])
@@ -194,14 +190,14 @@ func buildData(mem memtable.Memtable, conf *config.Config, gen int, path string,
 		filename = CreateFileName(path, gen, "Data", "db")
 	}
 	if conf.SSTable.UseCompression {
-		db.WriteData(filename, conf, dict)
+		db.WriteData(filename, conf, dict, cbm)
 	} else {
-		db.WriteData(filename, conf, nil)
+		db.WriteData(filename, conf, nil, cbm)
 	}
 	return db
 }
 
-func buildIndex(conf *config.Config, gen int, path string, db *Data, singleFile bool) *Index {
+func buildIndex(conf *config.Config, gen int, path string, db *Data, singleFile bool, cbm *block_organization.CachedBlockManager) *Index {
 	ib := &Index{}
 	for _, record := range db.Records {
 		ir := NewIndexRecord(record.Key, record.Offset)
@@ -212,14 +208,14 @@ func buildIndex(conf *config.Config, gen int, path string, db *Data, singleFile 
 	if !singleFile {
 		filename = CreateFileName(path, gen, "Index", "db")
 	}
-	err := ib.WriteIndex(filename, conf)
+	err := ib.WriteIndex(filename, conf, cbm)
 	if err != nil {
 		panic("Error writing index to file: " + err.Error())
 	}
 	return ib
 }
 
-func buildSummary(conf *config.Config, index *Index, gen int, path string, singleFile bool) *Summary {
+func buildSummary(conf *config.Config, index *Index, gen int, path string, singleFile bool, cbm *block_organization.CachedBlockManager) *Summary {
 	sb := &Summary{}
 	for i := 0; i < len(index.Records); i += conf.SSTable.SummaryLevel {
 		if i+conf.SSTable.SummaryLevel >= len(index.Records) {
@@ -247,14 +243,14 @@ func buildSummary(conf *config.Config, index *Index, gen int, path string, singl
 	if !singleFile {
 		filename = CreateFileName(path, gen, "Summary", "db")
 	}
-	err := sb.WriteSummary(filename, conf)
+	err := sb.WriteSummary(filename, conf, cbm)
 	if err != nil {
 		panic("Error writing summary to file: " + err.Error())
 	}
 	return sb
 }
 
-func buildBloomFilter(conf *config.Config, gen int, path string, db *Data, singleFile bool) bloomfilter.BloomFilter {
+func buildBloomFilter(conf *config.Config, gen int, path string, db *Data, singleFile bool, cbm *block_organization.CachedBlockManager) bloomfilter.BloomFilter {
 	filename := CreateFileName(path, gen, "Filter", "db")
 	fb := bloomfilter.MakeBloomFilter(len(db.Records), 0.5)
 	for _, record := range db.Records {
@@ -265,8 +261,9 @@ func buildBloomFilter(conf *config.Config, gen int, path string, db *Data, singl
 	}
 	if !singleFile {
 		serialized := fb.Serialize()
-		bm := block_organization.NewBlockManager(conf)
-		_, err := bm.AppendBlock(filename, serialized)
+		// data sadrzi velicinu bloom filtera i sam bloom filter
+
+		_, err := cbm.Append(filename, serialized)
 		if err != nil {
 			panic("Error writing bloom filter to file: " + err.Error())
 		}
@@ -275,7 +272,7 @@ func buildBloomFilter(conf *config.Config, gen int, path string, db *Data, singl
 }
 
 // buildMetadata kreira Merkle stablo i upisuje ga u fajl
-func buildMetadata(gen int, path string, db *Data, singleFile bool, conf *config.Config) *merkle.MerkleTree {
+func buildMetadata(gen int, path string, db *Data, singleFile bool, conf *config.Config, cbm *block_organization.CachedBlockManager) *merkle.MerkleTree {
 	filename := CreateFileName(path, gen, "Metadata", "db")
 	data := make([][]byte, len(db.Records))
 	for i, record := range db.Records {
@@ -287,8 +284,7 @@ func buildMetadata(gen int, path string, db *Data, singleFile bool, conf *config
 	mt := merkle.NewMerkleTree(data)
 	if !singleFile {
 		serialized, _ := mt.Serialize()
-		bm := block_organization.NewBlockManager(conf)
-		_, err := bm.AppendBlock(filename, serialized)
+		_, err := cbm.Append(filename, serialized)
 		if err != nil {
 			panic("Error writing bloom filter to file: " + err.Error())
 		}
@@ -297,20 +293,21 @@ func buildMetadata(gen int, path string, db *Data, singleFile bool, conf *config
 	return mt
 }
 
-func ReadBloomFilter(path string, conf *config.Config) (bloomfilter.BloomFilter, error) {
-	bm := block_organization.NewBlockManager(conf) // Koristimo nil jer nam nije potreban config ovde
-	block, err := bm.ReadBlock(path, 0)
+func ReadBloomFilter(path string, conf *config.Config, bm *block_organization.CachedBlockManager) (bloomfilter.BloomFilter, error) {
+	println("Reading Bloom filter from file:", path)
+	block, err := bm.Read(path, 0)
+
 	if err != nil {
 		return bloomfilter.BloomFilter{}, fmt.Errorf("error reading bloom filter from file %s: %w", path, err)
 	}
 	fb := bloomfilter.Deserialize(block)
+	println(len(block))
 	return fb[0], nil
 }
 
-func ReadMetadata(path string, conf *config.Config) (*merkle.MerkleTree, error) {
+func ReadMetadata(path string, conf *config.Config, bm *block_organization.CachedBlockManager) (*merkle.MerkleTree, error) {
 	m := &merkle.MerkleTree{}
-	bm := block_organization.NewBlockManager(conf)
-	block, err := bm.ReadBlock(path, 0)
+	block, err := bm.Read(path, 0)
 	if err != nil {
 		return nil, fmt.Errorf("error reading Merkle tree from file %s: %w", path, err)
 	}
@@ -322,9 +319,8 @@ func ReadMetadata(path string, conf *config.Config) (*merkle.MerkleTree, error) 
 }
 
 // Ucitava offsete sa kraja fajla
-func ReadOffsetsFromFile(path string, conf *config.Config) (map[string]int64, error) {
+func ReadOffsetsFromFile(path string, conf *config.Config, bm *block_organization.CachedBlockManager) (map[string]int64, error) {
 	offsets := make(map[string]int64)
-	bm := block_organization.NewBlockManager(conf)
 	block, err := bm.ReadBlock(path, 0)
 	if err != nil {
 		return nil, fmt.Errorf("error reading offsets from file %s: %w", path, err)
@@ -345,10 +341,9 @@ func ReadOffsetsFromFile(path string, conf *config.Config) (map[string]int64, er
 	return offsets, nil
 }
 
-func (sstable *SSTable) ReadFilterMetaCompression(path string, offsets map[string]int64, readMerkle bool, conf *config.Config) error {
+func (sstable *SSTable) ReadFilterMetaCompression(path string, offsets map[string]int64, readMerkle bool, conf *config.Config, bm *block_organization.CachedBlockManager) error {
 	//Citanje Compression info
-	bm := block_organization.NewBlockManager(conf)
-	block, err := bm.ReadBlock(path, int(offsets["Compression"]/int64(conf.Block.BlockSize)))
+	block, err := bm.Read(path, int(offsets["Compression"]/int64(conf.Block.BlockSize)))
 	if err != nil {
 		return fmt.Errorf("error reading compression info from file: %w", err)
 	}
@@ -356,14 +351,14 @@ func (sstable *SSTable) ReadFilterMetaCompression(path string, offsets map[strin
 	UsingCompression := str_block == "Using compression"
 	sstable.UseCompression = UsingCompression
 	// Citanje Bloom filtera
-	block, err = bm.ReadBlock(path, int(offsets["Filter"]/int64(conf.Block.BlockSize)))
+	block, err = bm.Read(path, int(offsets["Filter"]/int64(conf.Block.BlockSize)))
 	if err != nil {
 		return fmt.Errorf("error reading Bloom filter from file: %w", err)
 	}
 	sstable.Filter = bloomfilter.Deserialize(block)[0]
 	if readMerkle {
 		// Citanje Merkle stabla
-		block, err = bm.ReadBlock(path, int(offsets["Metadata"]/int64(conf.Block.BlockSize)))
+		block, err = bm.Read(path, int(offsets["Metadata"]/int64(conf.Block.BlockSize)))
 		if err != nil {
 			return fmt.Errorf("error reading Merkle tree from file: %w", err)
 		}
@@ -377,7 +372,7 @@ func (sstable *SSTable) ReadFilterMetaCompression(path string, offsets map[strin
 
 // WriteSSTable upisuje SSTable u fajl
 // Pomocna funkcija za LSM
-func WriteSSTable(sstable *SSTable, dir string, conf *config.Config) {
+func WriteSSTable(sstable *SSTable, dir string, conf *config.Config, cbm *block_organization.CachedBlockManager) {
 	path := fmt.Sprintf("%s/%d", dir, sstable.Gen)
 	err := CreateDirectoryIfNotExists(path)
 	if err != nil {
@@ -400,22 +395,21 @@ func WriteSSTable(sstable *SSTable, dir string, conf *config.Config) {
 
 	// Write Index
 	indexPath := CreateFileName(path, sstable.Gen, "Index", "db")
-	err = sstable.Index.WriteIndex(indexPath, conf)
+	err = sstable.Index.WriteIndex(indexPath, conf, cbm)
 	if err != nil {
 		panic("Error writing index to file: " + err.Error())
 	}
 
 	// Write Summary
 	summaryPath := CreateFileName(path, sstable.Gen, "Summary", "db")
-	err = sstable.Summary.WriteSummary(summaryPath, conf)
+	err = sstable.Summary.WriteSummary(summaryPath, conf, cbm)
 	if err != nil {
 		panic("Error writing summary to file: " + err.Error())
 	}
 
 	// Write Bloom Filter
 	filterPath := CreateFileName(path, sstable.Gen, "Filter", "db")
-	bm := block_organization.NewBlockManager(conf)
-	_, err = bm.AppendBlock(filterPath, sstable.Filter.Serialize())
+	_, err = cbm.AppendBlock(filterPath, sstable.Filter.Serialize())
 	if err != nil {
 		panic("Error writing bloom filter to file: " + err.Error())
 	}
@@ -464,7 +458,7 @@ func NewEmptySSTable(conf *config.Config, level int, generation int) *SSTable {
 
 // Get traži ključ u SSTable-u i vraća odgovarajući DataRecord
 // Pomocna funkcija za LSM
-func (s *SSTable) Get(conf *config.Config, key []byte) (*DataRecord, error) {
+func (s *SSTable) Get(conf *config.Config, key []byte, bm *block_organization.CachedBlockManager) (*DataRecord, error) {
 	//println("SSTable Get called for key:", string(key))
 	// Proveri Bloom filter pre pretrage
 	keyCopy := make([]byte, len(key))
@@ -481,7 +475,6 @@ func (s *SSTable) Get(conf *config.Config, key []byte) (*DataRecord, error) {
 
 	// Ako je ključ unutar opsega summary, proveri index
 	// indexOffset je offset u Index segmentu gde se nalazi ovaj summary
-	bm := block_organization.NewBlockManager(conf)
 	prefixIter := s.PrefixIterate(string(key), bm)
 	if prefixIter == nil {
 		return nil, nil // Nema zapisa sa tim prefiksom
@@ -502,7 +495,7 @@ func (s *SSTable) Get(conf *config.Config, key []byte) (*DataRecord, error) {
 // Pomocna funkcija za PreffixIterate i RangeIterate
 // Trazi prvi sledeci zapis koji pocinje sa prefiksom/key-em
 // Prvo trazi u Summary, onda u Indexu, a zatim u Data segmentu
-func (s *SSTable) ReadRecordWithKey(bm *block_organization.BlockManager, blockNumber int, prefix string, rangeIter bool) (adapter.MemtableEntry, int) {
+func (s *SSTable) ReadRecordWithKey(bm *block_organization.CachedBlockManager, blockNumber int, prefix string, rangeIter bool) (adapter.MemtableEntry, int) {
 
 	sumRec, err := s.Summary.FindSummaryRecordWithKey(prefix) // Prvo trazimo u Summary
 	if err != nil {
@@ -521,7 +514,7 @@ func (s *SSTable) ReadRecordWithKey(bm *block_organization.BlockManager, blockNu
 			return adapter.MemtableEntry{}, -1
 		}
 	}
-	dataRec, nextBlock := s.Data.ReadRecord(bm, dataOffset/bm.BlockSize, s.CompressionKey) // Citanje iz Data fajla
+	dataRec, nextBlock := s.Data.ReadRecord(bm, dataOffset/bm.BM.BlockSize, s.CompressionKey) // Citanje iz Data fajla
 	if dataRec.Key == nil {
 		return adapter.MemtableEntry{}, -1
 	}
@@ -533,7 +526,7 @@ func (s *SSTable) ReadRecordWithKey(bm *block_organization.BlockManager, blockNu
 	}, nextBlock
 }
 
-func StartSSTable(level int, gen int, conf *config.Config, dict *compression.Dictionary) (*SSTable, error) {
+func StartSSTable(level int, gen int, conf *config.Config, dict *compression.Dictionary, cbm *block_organization.CachedBlockManager) (*SSTable, error) {
 	// Ucitavamo bloom filter i summary iz fajla
 	if gen < 1 {
 		return nil, fmt.Errorf("invalid generation number: %d", gen)
@@ -547,7 +540,7 @@ func StartSSTable(level int, gen int, conf *config.Config, dict *compression.Dic
 			Dir:        dir,
 		}
 		path := CreateFileName(dir, gen, "SSTable", "db")
-		offsets, err := ReadOffsetsFromFile(path, conf)
+		offsets, err := ReadOffsetsFromFile(path, conf, cbm)
 		if err != nil {
 			panic("Error reading offsets from file: " + err.Error())
 		}
@@ -576,7 +569,7 @@ func StartSSTable(level int, gen int, conf *config.Config, dict *compression.Dic
 		sstable.MetadataOffset = offsets["Metadata"]
 
 		// Citamo compression info, bloom filter
-		err = sstable.ReadFilterMetaCompression(path, offsets, false, conf)
+		err = sstable.ReadFilterMetaCompression(path, offsets, false, conf, cbm)
 		if err != nil {
 			panic("Error reading filter, metadata and compression info: " + err.Error())
 		}
@@ -589,7 +582,7 @@ func StartSSTable(level int, gen int, conf *config.Config, dict *compression.Dic
 		}
 
 		//Ucitavamo Summary
-		summary, err := ReadSummary(sstable.Summary.SummaryFile.Path, conf, sstable.Summary.SummaryFile.Offset, sstable.FilterOffset)
+		summary, err := ReadSummary(sstable.Summary.SummaryFile.Path, conf, sstable.Summary.SummaryFile.Offset, sstable.FilterOffset, cbm)
 		if err != nil {
 			return nil, fmt.Errorf("error reading summary: %w", err)
 		}
@@ -599,24 +592,26 @@ func StartSSTable(level int, gen int, conf *config.Config, dict *compression.Dic
 
 	// Ucitavamo BloomFiler
 	bfPath := CreateFileName(dir, gen, "Filter", "db")
-	bf, err := ReadBloomFilter(bfPath, conf)
+	bf, err := ReadBloomFilter(bfPath, conf, cbm)
 	if err != nil {
 		return nil, fmt.Errorf("error reading bloom filter: %w", err)
 	}
-
+	println("Reading summary..")
 	// Ucitavamo Summary
 	summaryPath := CreateFileName(dir, gen, "Summary", "db")
-	summary, err := ReadSummary(summaryPath, conf, 0, 0)
+	summary, err := ReadSummary(summaryPath, conf, 0, 0, cbm)
 	if err != nil {
 		return nil, fmt.Errorf("error reading summary: %w", err)
 	}
+	println("Summary loaded from file:", summaryPath)
 
 	// Ucitavamo kompresiju
 	dictpath := CreateFileName(dir, gen, "CompressionInfo", "db")
-	UseCompression, err := ReadCompressionInfo(dictpath, conf)
+	UseCompression, err := ReadCompressionInfo(dictpath, conf, cbm)
 	if err != nil {
 		return nil, fmt.Errorf("error reading compression dictionary: %w", err)
 	}
+	println("Compression dictionary loaded from file:", dictpath)
 	dictionary := dict
 	if !UseCompression {
 		dictionary = nil // Ako ne koristimo kompresiju, dictionary je nil
@@ -685,7 +680,7 @@ func (s *SSTable) DeleteFiles(conf *config.Config) error {
 // ValidateMerkleTree proverava da li je doslo do izmene u podacima
 // Ako jeste, vraca true, ako nije, vraca false
 // Ako je doslo do greske u citanju podataka ili Merkle stabla, vraca gresku
-func (sstable *SSTable) ValidateMerkleTree(conf *config.Config, dict *compression.Dictionary) (bool, error) {
+func (sstable *SSTable) ValidateMerkleTree(conf *config.Config, dict *compression.Dictionary, bm *block_organization.CachedBlockManager) (bool, error) {
 
 	filename := CreateFileName(sstable.Dir, sstable.Gen, "Data", "db")
 	if sstable.SingleFile {
@@ -694,8 +689,7 @@ func (sstable *SSTable) ValidateMerkleTree(conf *config.Config, dict *compressio
 	if !sstable.UseCompression {
 		dict = nil
 	}
-
-	db, err := ReadData(filename, conf, dict, sstable.Data.DataFile.Offset, sstable.Index.IndexFile.Offset)
+	db, err := ReadData(filename, conf, dict, sstable.Data.DataFile.Offset, sstable.Index.IndexFile.Offset, bm)
 	if err != nil {
 		return false, fmt.Errorf("error reading data: %w", err)
 	}
@@ -710,17 +704,16 @@ func (sstable *SSTable) ValidateMerkleTree(conf *config.Config, dict *compressio
 	new_mt := merkle.NewMerkleTree(data)
 	if !sstable.SingleFile {
 		filename = CreateFileName(sstable.Dir, sstable.Gen, "Metadata", "db")
-
 	}
-	bm := block_organization.NewBlockManager(conf)
 	bn := 0
 	if sstable.SingleFile {
-		bn = int(sstable.MetadataOffset / int64(bm.BlockSize))
+		bn = int(sstable.MetadataOffset / int64(bm.BM.BlockSize))
 	}
-	block, err := bm.ReadBlock(filename, bn)
+	block, err := bm.Read(filename, bn)
 	if err != nil {
 		return false, fmt.Errorf("error reading block from file %s: %w", filename, err)
 	}
+
 	old_mt, err := merkle.Deserialize(block)
 	if err != nil {
 		return false, fmt.Errorf("error reading Merkle tree from file %s: %w", filename, err)

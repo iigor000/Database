@@ -186,6 +186,11 @@ func (t *MerkleTree) Serialize() ([]byte, error) {
 	}
 	allNodes := BFS(t)
 	leaves := findLeaves(allNodes)
+	//upisi velicinu listova
+	if err := binary.Write(&buf, binary.LittleEndian, int32(len(leaves))); err != nil {
+		return nil, err
+	}
+	// Zatim upisujemo hash vrednosti listova
 	for _, leaf := range leaves {
 		if err := binary.Write(&buf, binary.LittleEndian, leaf.Hash); err != nil {
 			return nil, err
@@ -218,8 +223,14 @@ func Deserialize(data []byte) (*MerkleTree, error) {
 	if err := binary.Read(buf, binary.LittleEndian, &merkleRootHash); err != nil {
 		return nil, err
 	}
+	// Zatim čitaj broj listova
+	var numLeaves int32
+	if err := binary.Read(buf, binary.LittleEndian, &numLeaves); err != nil {
+		return nil, err
+	}
+
 	var leafHashes []HashValue
-	for buf.Len() > 0 {
+	for i := 0; i < int(numLeaves); i++ {
 		var leafHash HashValue
 		if err := binary.Read(buf, binary.LittleEndian, &leafHash); err != nil {
 			return nil, err

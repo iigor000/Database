@@ -8,12 +8,11 @@ import (
 	"github.com/iigor000/database/structures/block_organization"
 )
 
-func (s *SSTable) PrefixScan(prefix string, pageNumber int, pageSize int, conf *config.Config) ([]adapter.MemtableEntry, error) {
+func (s *SSTable) PrefixScan(prefix string, pageNumber int, pageSize int, conf *config.Config, bm *block_organization.CachedBlockManager) ([]adapter.MemtableEntry, error) {
 
 	entries := make([]adapter.MemtableEntry, 0)
 	startIndex := pageNumber * pageSize
 	endIndex := startIndex + pageSize
-	bm := block_organization.NewBlockManager(conf)
 	prefixIter := s.PrefixIterate(prefix, bm)
 	if prefixIter == nil {
 		return nil, fmt.Errorf("failed to create Prefix iterator for prefix: %s", prefix)
@@ -41,11 +40,10 @@ func (s *SSTable) PrefixScan(prefix string, pageNumber int, pageSize int, conf *
 	return entries, nil
 }
 
-func (s *SSTable) RangeScan(minKey []byte, maxKey []byte, pageNumber int, pageSize int, conf *config.Config) ([]adapter.MemtableEntry, error) {
+func (s *SSTable) RangeScan(minKey []byte, maxKey []byte, pageNumber int, pageSize int, conf *config.Config, bm *block_organization.CachedBlockManager) ([]adapter.MemtableEntry, error) {
 	entries := make([]adapter.MemtableEntry, 0)
 	startIndex := pageNumber * pageSize
 	endIndex := startIndex + pageSize
-	bm := block_organization.NewBlockManager(conf)
 	rangeIter := s.RangeIterate(string(minKey), string(maxKey), bm)
 	if rangeIter == nil {
 		return nil, fmt.Errorf("failed to create Range iterator for range: %s - %s", string(minKey), string(maxKey))

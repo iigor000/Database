@@ -11,11 +11,11 @@ type SSTableIterator struct {
 	sstable         *SSTable
 	currentRecord   adapter.MemtableEntry
 	nextBlockNumber int
-	blockManager    *block_organization.BlockManager
+	blockManager    *block_organization.CachedBlockManager
 }
 
-func (sst *SSTable) NewSSTableIterator(bm *block_organization.BlockManager) *SSTableIterator {
-	bn := int(sst.Data.DataFile.Offset) / bm.BlockSize
+func (sst *SSTable) NewSSTableIterator(bm *block_organization.CachedBlockManager) *SSTableIterator {
+	bn := int(sst.Data.DataFile.Offset) / bm.BM.BlockSize
 	rec, nxtBlck := sst.Data.ReadRecord(bm, bn, sst.CompressionKey)
 	return &SSTableIterator{
 		sstable:         sst,
@@ -31,7 +31,7 @@ func (si *SSTableIterator) Next() (adapter.MemtableEntry, bool) {
 	}
 	rec := si.currentRecord
 	if si.sstable.SingleFile {
-		if int(si.sstable.Data.DataFile.SizeOnDisk) < si.nextBlockNumber*si.blockManager.BlockSize {
+		if int(si.sstable.Data.DataFile.SizeOnDisk) < si.nextBlockNumber*si.blockManager.BM.BlockSize {
 
 			si.Stop()
 			return rec, true
@@ -59,7 +59,7 @@ type PrefixIterator struct {
 }
 
 // Inicijalizuje iterator koji vraca samo zapise sa datim prefiksom
-func (sst *SSTable) PrefixIterate(prefix string, bm *block_organization.BlockManager) *PrefixIterator {
+func (sst *SSTable) PrefixIterate(prefix string, bm *block_organization.CachedBlockManager) *PrefixIterator {
 	if len(prefix) == 0 {
 		it := sst.NewSSTableIterator(bm) // Ako je prefiks prazan, vracamo iterator koji sadrzi sve zapise
 		return &PrefixIterator{
@@ -90,7 +90,7 @@ func (pi *PrefixIterator) Next() (adapter.MemtableEntry, bool) {
 	}
 	record := pi.Iterator.currentRecord
 	if pi.Iterator.sstable.SingleFile {
-		if int(pi.Iterator.sstable.Data.DataFile.SizeOnDisk) < pi.Iterator.nextBlockNumber*pi.Iterator.blockManager.BlockSize {
+		if int(pi.Iterator.sstable.Data.DataFile.SizeOnDisk) < pi.Iterator.nextBlockNumber*pi.Iterator.blockManager.BM.BlockSize {
 			pi.Iterator.Stop()
 			return record, true
 		}
@@ -118,7 +118,7 @@ type RangeIterator struct {
 }
 
 // Inicijalizuje iterator koji vraca samo zapise u datom opsegu kljuceva
-func (sst *SSTable) RangeIterate(startKey, endKey string, bm *block_organization.BlockManager) *RangeIterator {
+func (sst *SSTable) RangeIterate(startKey, endKey string, bm *block_organization.CachedBlockManager) *RangeIterator {
 	if startKey > endKey {
 		return nil // Nevalidan opseg
 	}
@@ -145,7 +145,7 @@ func (ri *RangeIterator) Next() (adapter.MemtableEntry, bool) {
 	}
 	record := ri.Iterator.currentRecord
 	if ri.Iterator.sstable.SingleFile {
-		if int(ri.Iterator.sstable.Data.DataFile.SizeOnDisk) < ri.Iterator.nextBlockNumber*ri.Iterator.blockManager.BlockSize {
+		if int(ri.Iterator.sstable.Data.DataFile.SizeOnDisk) < ri.Iterator.nextBlockNumber*ri.Iterator.blockManager.BM.BlockSize {
 			ri.Iterator.Stop()
 			return record, false
 		}
