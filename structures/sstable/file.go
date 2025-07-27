@@ -3,6 +3,9 @@ package sstable
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+
+	"github.com/iigor000/database/config"
 )
 
 type File struct {
@@ -63,4 +66,35 @@ func WriteTxtToFile(path string, content string) error {
 	}
 
 	return nil
+}
+
+func CalculateDataSize(path string, conf *config.Config) int64 {
+	if conf.SSTable.SingleFile {
+		info, err := os.Stat(path)
+		if err != nil {
+			fmt.Printf("failed to stat file '%s': %v\n", path, err)
+			return 0
+		}
+		if !info.IsDir() {
+			return info.Size()
+		}
+	}
+
+	var totalSize int64 = 0
+
+	// Ako nije SingleFile, path je direktorijum, saberi veličine svih fajlova
+	err := filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			totalSize += info.Size()
+		}
+		return nil
+	})
+	if err != nil {
+		fmt.Printf("failed to walk directory '%s': %v\n", path, err)
+		return 0
+	}
+	return totalSize
 }
