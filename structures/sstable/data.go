@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"hash/crc32"
+	"strings"
 
 	"github.com/iigor000/database/config"
 	"github.com/iigor000/database/structures/adapter"
@@ -100,12 +101,12 @@ func (dr *DataRecord) Serialize(dict *compression.Dictionary) ([]byte, error) {
 }
 
 // WriteDataRecord upisuje DataRecord u fajl
-func (dr *DataRecord) WriteDataRecord(path string, dict *compression.Dictionary, bm *block_organization.BlockManager) (int, error) {
+func (dr *DataRecord) WriteDataRecord(path string, dict *compression.Dictionary, bm *block_organization.CachedBlockManager) (int, error) {
 	serialized_data, err := dr.Serialize(dict)
 	if err != nil {
 		return -1, fmt.Errorf("error serializing data record: %w", err)
 	}
-	return bm.AppendBlock(path, serialized_data)
+	return bm.Append(path, serialized_data)
 }
 
 // calcCRC Racunaa CRC na osnovu Key, Value, Timestamp i Tombstone
@@ -125,12 +126,12 @@ func (dr *DataRecord) calcCRC() uint32 {
 }
 
 // Upisuje Data u fajl
-func (db *Data) WriteData(path string, conf *config.Config, dict *compression.Dictionary) (*Data, error) {
-	bm := block_organization.NewBlockManager(conf)
+func (db *Data) WriteData(path string, conf *config.Config, dict *compression.Dictionary, cbm *block_organization.CachedBlockManager) (*Data, error) {
+
 	rec := 0
 	for _, record := range db.Records {
 
-		bn, err := record.WriteDataRecord(path, dict, bm)
+		bn, err := record.WriteDataRecord(path, dict, cbm)
 		if err != nil {
 			return db, fmt.Errorf("error writing data record to file %s: %w", path, err)
 		}
@@ -143,8 +144,8 @@ func (db *Data) WriteData(path string, conf *config.Config, dict *compression.Di
 }
 
 // Citanje DataBlock iz fajla
-func ReadData(path string, conf *config.Config, dict *compression.Dictionary, startOffset, endOffset int64) (*Data, error) {
-	bm := block_organization.NewBlockManager(conf)
+func ReadData(path string, conf *config.Config, dict *compression.Dictionary, startOffset, endOffset int64, bm *block_organization.CachedBlockManager) (*Data, error) {
+
 	block_num := int(startOffset / int64(conf.Block.BlockSize)) // Pocinjemo od bloka koji sadrzi startOffset
 	end_block := int(endOffset / int64(conf.Block.BlockSize))   // Kraj bloka koji sadrzi endOffset
 
@@ -154,9 +155,9 @@ func ReadData(path string, conf *config.Config, dict *compression.Dictionary, st
 	dataBlock := &Data{}
 
 	for {
-		block, err := bm.ReadBlock(path, block_num)
+		block, err := bm.Read(path, block_num)
 		if err != nil {
-			if err.Error() == "EOF" {
+			if err.Error() == "EOF" || strings.Contains(err.Error(), "EOF") {
 				break // Kraj fajla
 			}
 			return nil, fmt.Errorf("error reading data block from file %s: %w", path, err)
@@ -167,7 +168,7 @@ func ReadData(path string, conf *config.Config, dict *compression.Dictionary, st
 		}
 		block_num1 := block_num
 		for i := 1; i < 1000; i++ {
-			if len(block) == i*conf.Block.BlockSize {
+			if len(block)+(i*1) <= i*conf.Block.BlockSize {
 				block_num1 = block_num + i
 				break
 			}
@@ -298,30 +299,10 @@ func (dr *DataRecord) Deserialize(data []byte, dict *compression.Dictionary) err
 	return nil
 }
 
-// ReadRecordAtOffset cita DataRecord na datom ofsetu iz Data fajla
-func (d *Data) ReadRecordAtOffset(conf *config.Config, dict *compression.Dictionary, dataOffset int) (*DataRecord, error) {
-	bm := block_organization.NewBlockManager(conf)
-
-	// Računamo koji blok sadrži traženi ofset
-	blockNum := dataOffset / conf.Block.BlockSize
-	blockData, err := bm.ReadBlock(d.DataFile.Path, blockNum)
-
-	if err != nil {
-		return nil, fmt.Errorf("error reading data block %d: %w", blockNum, err)
-	}
-
-	record := &DataRecord{}
-	if err := record.Deserialize(blockData, dict); err != nil {
-		return nil, fmt.Errorf("error deserializing data record at offset %d: %w", dataOffset, err)
-	}
-
-	return record, nil
-}
-
 // Pomocna funkcija za Iterator-e
-func (d *Data) ReadRecord(bm *block_organization.BlockManager, blockNumber int, dict *compression.Dictionary) (adapter.MemtableEntry, int) {
+func (d *Data) ReadRecord(bm *block_organization.CachedBlockManager, blockNumber int, dict *compression.Dictionary) (adapter.MemtableEntry, int) {
 
-	blockData, err := bm.ReadBlock(d.DataFile.Path, blockNumber)
+	blockData, err := bm.Read(d.DataFile.Path, blockNumber)
 	if err != nil {
 		return adapter.MemtableEntry{}, -1
 	}
@@ -332,7 +313,7 @@ func (d *Data) ReadRecord(bm *block_organization.BlockManager, blockNumber int, 
 		return adapter.MemtableEntry{}, -1
 	}
 
-	record.Offset = blockNumber * bm.BlockSize
+	record.Offset = blockNumber * bm.BM.BlockSize
 	return adapter.MemtableEntry{
 		Key:       record.Key,
 		Value:     record.Value,

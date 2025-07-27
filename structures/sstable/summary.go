@@ -3,6 +3,7 @@ package sstable
 import (
 	"bytes"
 	"fmt"
+	"strings"
 
 	"github.com/iigor000/database/config"
 	"github.com/iigor000/database/structures/block_organization"
@@ -23,14 +24,13 @@ type Summary struct {
 	SummaryFile File
 }
 
-func (sb *Summary) WriteSummary(path string, conf *config.Config) error {
-	bm := block_organization.NewBlockManager(conf)
+func (sb *Summary) WriteSummary(path string, conf *config.Config, cbm *block_organization.CachedBlockManager) error {
 	// Prvo upisujemo header
 	header, err := sb.SerializeHeader()
 	if err != nil {
 		return fmt.Errorf("failed to serialize summary header: %w", err)
 	}
-	bn, err := bm.AppendBlock(path, header)
+	bn, err := cbm.AppendBlock(path, header)
 	if err != nil {
 		return fmt.Errorf("failed to write summary header: %w", err)
 	}
@@ -39,7 +39,7 @@ func (sb *Summary) WriteSummary(path string, conf *config.Config) error {
 	sb.SummaryFile.Offset = int64(bn * conf.Block.BlockSize)
 
 	for _, record := range sb.Records {
-		bn, err := record.WriteSummaryRecord(path, bm)
+		bn, err := record.WriteSummaryRecord(path, cbm)
 		if err != nil {
 			return err
 		}
@@ -57,9 +57,9 @@ func (sb *Summary) WriteSummary(path string, conf *config.Config) error {
 	return nil
 }
 
-func (sr *SummaryRecord) WriteSummaryRecord(path string, bm *block_organization.BlockManager) (int, error) {
+func (sr *SummaryRecord) WriteSummaryRecord(path string, bm *block_organization.CachedBlockManager) (int, error) {
 	serializedData, _ := sr.Serialize()
-	bn, err := bm.AppendBlock(path, serializedData)
+	bn, err := bm.Append(path, serializedData)
 	if err != nil {
 		return -1, err
 	}
@@ -94,8 +94,7 @@ func (s *Summary) SerializeHeader() ([]byte, error) {
 	return serializedData, nil
 }
 
-func ReadSummary(path string, conf *config.Config, startOffset, endOffset int64) (*Summary, error) {
-	bm := block_organization.NewBlockManager(conf)
+func ReadSummary(path string, conf *config.Config, startOffset, endOffset int64, bm *block_organization.CachedBlockManager) (*Summary, error) {
 	block_num := int(startOffset / int64(conf.Block.BlockSize)) // Pocinjemo od bloka koji sadrzi startOffset
 	end_block := int(endOffset / int64(conf.Block.BlockSize))   // Kraj bloka koji sadrzi endOffset
 	if endOffset <= startOffset {
@@ -113,16 +112,11 @@ func ReadSummary(path string, conf *config.Config, startOffset, endOffset int64)
 	if err := summary.DeserializeHeader(data); err != nil {
 		return nil, fmt.Errorf("failed to deserialize summary header: %w", err)
 	}
-	for i := 1; i < 1000; i++ {
-		if len(data) == i*conf.Block.BlockSize {
-			block_num += i
-			break
-		}
-	}
+	block_num++
 	for {
-		block, err := bm.ReadBlock(path, block_num)
+		block, err := bm.Read(path, block_num)
 		if err != nil {
-			if err.Error() == "EOF" {
+			if err.Error() == "EOF" || strings.Contains(err.Error(), "EOF") {
 				break // Kraj fajla
 			}
 			return nil, err
@@ -133,7 +127,7 @@ func ReadSummary(path string, conf *config.Config, startOffset, endOffset int64)
 		}
 		block_num1 := block_num
 		for i := 1; i < 1000; i++ {
-			if len(block) == i*conf.Block.BlockSize {
+			if len(block)+(i*1) <= i*conf.Block.BlockSize {
 				block_num1 = i + block_num
 				break
 			}

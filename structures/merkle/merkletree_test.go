@@ -104,6 +104,9 @@ func TestWriteReadToFile(t *testing.T) {
 		Block: config.BlockConfig{
 			BlockSize: 4096,
 		},
+		Cache: config.CacheConfig{
+			Capacity: 100,
+		},
 	}
 
 	data := [][]byte{
@@ -119,14 +122,22 @@ func TestWriteReadToFile(t *testing.T) {
 		t.Fatal("Error serializing Merkle Tree")
 	}
 	bm := block_organization.NewBlockManager(conf)
-	_, err = bm.AppendBlock("merkletree.db", bytesToWrite)
+	bc := block_organization.NewBlockCache(conf)
+	cbm := &block_organization.CachedBlockManager{
+		BM: bm,
+		C:  bc,
+	}
+
+	bn, err := cbm.Append("merkletree.db", bytesToWrite)
 	if err != nil {
 		t.Fatal("Error writing to block manager")
 	}
-	block, err := bm.ReadBlock("merkletree.db", 0)
+	println("Merkle Tree written to file successfully")
+	block, err := cbm.Read("merkletree.db", bn)
 	if err != nil {
 		t.Fatal("Error reading from block manager")
 	}
+	println("Read", len(block), "bytes from file merkletree.db")
 	newTree, err := Deserialize(block)
 	if err != nil {
 		t.Fatal("Error deserializing block")

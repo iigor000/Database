@@ -29,6 +29,9 @@ func TestSSTable(t *testing.T) {
 		Block: config.BlockConfig{
 			BlockSize: 4096,
 		},
+		Cache: config.CacheConfig{
+			Capacity: 100,
+		},
 	}
 	// Initialize a memtable with some data
 	memtable := memtable.NewMemtable(conf)
@@ -47,8 +50,14 @@ func TestSSTable(t *testing.T) {
 	dict.Add([]byte("key4"))
 	dict.Add([]byte("key5"))
 
+	bm := block_organization.NewBlockManager(conf)
+	bc := block_organization.NewBlockCache(conf)
+	cbm := &block_organization.CachedBlockManager{
+		BM: bm,
+		C:  bc,
+	}
 	// Flush the memtable to create an SSTable
-	sstable := FlushSSTable(conf, *memtable, 1, dict)
+	sstable := FlushSSTable(conf, *memtable, 1, dict, cbm)
 	// Check if the SSTable has the expected number of records
 	if len(sstable.Data.Records) != 5 {
 		t.Errorf("Expected 5 records in SSTable, got %d", len(sstable.Data.Records))
@@ -91,6 +100,9 @@ func TestSSTableRead(t *testing.T) {
 		Block: config.BlockConfig{
 			BlockSize: 4096,
 		},
+		Cache: config.CacheConfig{
+			Capacity: 100,
+		},
 	}
 
 	// Initialize a memtable with some data
@@ -111,11 +123,16 @@ func TestSSTableRead(t *testing.T) {
 	dict.Add([]byte("key3"))
 	dict.Add([]byte("key4"))
 
-	sstable := FlushSSTable(conf, *memtable, 1, dict)
+	bm := block_organization.NewBlockManager(conf)
+	bc := block_organization.NewBlockCache(conf)
+	cbm := &block_organization.CachedBlockManager{
+		BM: bm,
+		C:  bc,
+	}
+	sstable := FlushSSTable(conf, *memtable, 1, dict, cbm)
 	if sstable == nil {
 		t.Fatal("Failed to create SSTable")
 	}
-
 	println("SSTable created successfully with generation:", sstable.Gen)
 	// Print SSTABLEREAD
 	for _, record := range sstable.Data.Records {
@@ -134,20 +151,12 @@ func TestSSTableRead(t *testing.T) {
 	}
 	println("Testing SSTable read...")
 	// Read the SSTable from disk
-	readSSTable, err := StartSSTable(sstable.Level, sstable.Gen, conf, dict)
+	readSSTable, err := StartSSTable(sstable.Level, sstable.Gen, conf, dict, cbm)
 	if err != nil {
 		t.Fatal("Failed to read SSTable:", err)
 	}
 	println("SSTable read successfully with generation:", readSSTable.Gen)
-	// Print Data Records
-	for _, record := range readSSTable.Data.Records {
-		println("Key:", string(record.Key), "Value:", string(record.Value), "Timestamp:", record.Timestamp, "Tombstone:", record.Tombstone)
-	}
-	// Print Index Records
-	println("Index Records:")
-	for _, record := range readSSTable.Index.Records {
-		println("Key:", string(record.Key), "Offset:", record.Offset)
-	}
+
 	// Print Summary Records
 	println("Summary FirstKey:", string(readSSTable.Summary.FirstKey), "LastKey:", string(readSSTable.Summary.LastKey))
 	println("Summary Records:")
@@ -166,7 +175,7 @@ func TestSSTableIterate(t *testing.T) {
 			SstableDirectory: "./sstable_test",
 			UseCompression:   true,
 			SummaryLevel:     2,
-			SingleFile:       false,
+			SingleFile:       true,
 		},
 		Memtable: config.MemtableConfig{
 			NumberOfMemtables: 1,
@@ -179,12 +188,21 @@ func TestSSTableIterate(t *testing.T) {
 		Block: config.BlockConfig{
 			BlockSize: 4096,
 		},
+		Cache: config.CacheConfig{
+			Capacity: 100,
+		},
 	}
 	dict, err := compression.Read("./sstable_test/dict_test.db")
 	if err != nil {
 		t.Fatalf("Failed to read dictionary: %v", err)
 	}
-	sstable, err := StartSSTable(1, 1, conf, dict)
+	bm := block_organization.NewBlockManager(conf)
+	bc := block_organization.NewBlockCache(conf)
+	cbm := &block_organization.CachedBlockManager{
+		BM: bm,
+		C:  bc,
+	}
+	sstable, err := StartSSTable(1, 1, conf, dict, cbm)
 	if err != nil {
 		t.Fatalf("Failed to start SSTable: %v", err)
 	}
@@ -193,8 +211,7 @@ func TestSSTableIterate(t *testing.T) {
 	for _, record := range sstable.Summary.Records {
 		println("FirstKey:", string(record.FirstKey), "LastKey:", "IndexOffset:", record.IndexOffset, "NumberOfRecords:", record.NumberOfRecords)
 	}
-	bm := block_organization.NewBlockManager(conf)
-	it := sstable.NewSSTableIterator(bm)
+	it := sstable.NewSSTableIterator(cbm)
 	println("Iterating over SSTable records:")
 	for {
 		entry, ok := it.Next()
@@ -215,7 +232,7 @@ func TestSSTableIterate(t *testing.T) {
 	// Test PrefixIterate
 	println("Testing PrefixIterate...")
 	prefix := "key5"
-	prefixIter := sstable.PrefixIterate(prefix, bm)
+	prefixIter := sstable.PrefixIterate(prefix, cbm)
 	if prefixIter == nil {
 		t.Fatal("Failed to create Prefix iterator")
 	}
@@ -231,7 +248,7 @@ func TestSSTableIterate(t *testing.T) {
 	println("Testing RangeIterate key2-key4...")
 	startKey := "key2"
 	endKey := "key4"
-	rangeIter := sstable.RangeIterate(startKey, endKey, bm)
+	rangeIter := sstable.RangeIterate(startKey, endKey, cbm)
 	if rangeIter == nil {
 		t.Fatal("Failed to create Range iterator")
 	}
@@ -265,19 +282,28 @@ func TestSSTableScan(t *testing.T) {
 		Block: config.BlockConfig{
 			BlockSize: 4096,
 		},
+		Cache: config.CacheConfig{
+			Capacity: 100,
+		},
 	}
 
 	dict, err := compression.Read("./sstable_test/dict_test.db")
 	if err != nil {
 		t.Fatalf("Failed to read dictionary: %v", err)
 	}
-	sstable, err := StartSSTable(1, 1, conf, dict)
+	bm := block_organization.NewBlockManager(conf)
+	bc := block_organization.NewBlockCache(conf)
+	cbm := &block_organization.CachedBlockManager{
+		BM: bm,
+		C:  bc,
+	}
+	sstable, err := StartSSTable(1, 1, conf, dict, cbm)
 	if err != nil {
 		t.Fatalf("Failed to start SSTable: %v", err)
 	}
 	prefix := "key1"
 	println("Testing PrefixScan for prefix:", prefix)
-	results, err := sstable.PrefixScan(prefix, 0, 10, conf)
+	results, err := sstable.PrefixScan(prefix, 0, 10, conf, cbm)
 	if err != nil {
 		t.Fatalf("PrefixScan failed: %v", err)
 	}
@@ -288,7 +314,7 @@ func TestSSTableScan(t *testing.T) {
 	minKey := []byte("key2")
 	maxKey := []byte("key4")
 	println("Testing RangeScan for keys between", string(minKey), "and", string(maxKey))
-	rangeResults, err := sstable.RangeScan(minKey, maxKey, 0, 10, conf)
+	rangeResults, err := sstable.RangeScan(minKey, maxKey, 0, 10, conf, cbm)
 	if err != nil {
 		t.Fatalf("RangeScan failed: %v", err)
 	}
@@ -316,6 +342,9 @@ func TestSSTableValidate(t *testing.T) {
 		Block: config.BlockConfig{
 			BlockSize: 4096,
 		},
+		Cache: config.CacheConfig{
+			Capacity: 100,
+		},
 	}
 
 	dict, err := compression.Read("./sstable_test/dict_test.db")
@@ -323,11 +352,17 @@ func TestSSTableValidate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to read dictionary: %v", err)
 	}
-	sstable, err := StartSSTable(1, 1, conf, dict)
+	bm := block_organization.NewBlockManager(conf)
+	bc := block_organization.NewBlockCache(conf)
+	cbm := &block_organization.CachedBlockManager{
+		BM: bm,
+		C:  bc,
+	}
+	sstable, err := StartSSTable(1, 1, conf, dict, cbm)
 	if err != nil {
 		t.Fatalf("Failed to start SSTable: %v", err)
 	}
-	changed, err := sstable.ValidateMerkleTree(conf, dict)
+	changed, err := sstable.ValidateMerkleTree(conf, dict, cbm)
 	if err != nil {
 		t.Fatalf("SSTable validation failed: %v", err)
 	}
