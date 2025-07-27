@@ -10,6 +10,7 @@ import (
 
 type Iterator struct {
 	current *Node
+	value   adapter.MemtableEntry
 }
 
 type RangeIterator struct {
@@ -33,48 +34,60 @@ func (s *SkipList) NewIterator() (*Iterator, error) {
 	for current.down != nil {
 		current = current.down
 	}
+	if current.next == nil {
+		return nil, errors.New("no entries found")
+	}
+	current = current.next
 
-	return &Iterator{current: current}, nil
+	return &Iterator{current: current, value: deserializeEntry(current.value)}, nil
 }
 
 // Prebacujemo iterator na sledeci cvor, ako nije prazan, ili ako je kljuc rezervisan idemo na sledeci
-func (iter *Iterator) Next() bool {
+func (iter *Iterator) Next() (adapter.MemtableEntry, bool) {
+	if iter.current == nil {
+		return adapter.MemtableEntry{}, false // Nema vise zapisa
+	}
+
+	oldValue := iter.value
+
 	for iter.current.next != nil {
 		iter.current = iter.current.next
 		if !util.CheckKeyReserved(string(iter.current.key)) {
-			return true
+			iter.value = deserializeEntry(iter.current.value)
+			return oldValue, true
 		}
 	}
-	iter.current = nil
-	return false
+
+	iter.Stop()
+	return oldValue, true
 }
 
 // Vraca trenutni zapis iteratora
-func (iter *Iterator) Value() *adapter.MemtableEntry {
-	if iter.current != nil {
-		entry := deserializeEntry(iter.current.value)
-		return &entry
-	}
-	return nil
+func (iter *Iterator) Stop() {
+	iter.current = nil
+	iter.value = adapter.MemtableEntry{}
 }
 
 // Inicijalizuje iterator koji vraca samo zapise sa datim opsegom kljuceva
-func (sl *SkipList) NewRangeIterator(startKey []byte, endKey []byte) (*RangeIterator, error) {
-	iter, err := sl.NewIterator()
-	if err != nil {
-		return nil, err
+func (s *SkipList) NewRangeIterator(startKey []byte, endKey []byte) (*RangeIterator, error) {
+	if s.isEmpty() {
+		return nil, errors.New("skiplist is empty")
 	}
 
-	if iter.Value() == nil {
-		return nil, errors.New("error: could not find startKey")
+	current := s.root
+	for current.down != nil {
+		current = current.down
+	}
+	if current.next == nil {
+		return nil, errors.New("no entries found with the given range")
+	}
+	current = current.next
+
+	for current != nil && bytes.Compare(current.key, startKey) < 0 {
+		current = current.next
 	}
 
-	// Postavljamo iterator na prvi kljuc koji je veci ili jednak startKey
-	for bytes.Compare(iter.Value().Key, startKey) < 0 {
-		if !iter.Next() {
-			return nil, errors.New("error: could not find startKey")
-		}
-	}
+	iter := &Iterator{current: current, value: deserializeEntry(current.value)}
 
 	return &RangeIterator{
 		Iterator: *iter,
@@ -84,39 +97,53 @@ func (sl *SkipList) NewRangeIterator(startKey []byte, endKey []byte) (*RangeIter
 }
 
 // Prolazi kroz iterator i vraca samo one zapise koji su u opsegu startKey i endKey
-func (iter *RangeIterator) Next() bool {
-	if !iter.Iterator.Next() {
-		return false
+func (iter *RangeIterator) Next() (adapter.MemtableEntry, bool) {
+	if iter.Iterator.current == nil {
+		return adapter.MemtableEntry{}, false // Nema vise zapisa
 	}
-	if bytes.Compare(iter.Value().Key, iter.endKey) > 0 {
-		iter.Iterator.current = nil
-		return false
-	}
-	return true
-}
 
-// Vraca trenutni zapis iteratora
-func (iter *RangeIterator) Value() *adapter.MemtableEntry {
-	return iter.Iterator.Value()
+	oldValue := iter.value
+
+	value, ok := iter.Iterator.Next()
+	if !ok {
+		return adapter.MemtableEntry{}, false
+	}
+
+	if bytes.Compare(value.Key, iter.endKey) > 0 {
+		iter.Iterator.current = nil
+		iter.Stop()
+		return oldValue, true
+	}
+
+	return oldValue, true
 }
 
 // Inicijalizuje iterator koji vraca samo zapise sa datim prefiksom
-func (sl *SkipList) NewPrefixIterator(prefix []byte) (*PrefixIterator, error) {
-	iter, err := sl.NewIterator()
-	if err != nil {
-		return nil, err
+func (s *SkipList) NewPrefixIterator(prefix []byte) (*PrefixIterator, error) {
+	if s.isEmpty() {
+		return nil, errors.New("skiplist is empty")
 	}
 
-	if iter.Value() == nil {
-		return nil, errors.New("error: could not find prefix")
+	current := s.root
+	for current.down != nil {
+		current = current.down
 	}
+
+	if current.next == nil {
+		return nil, errors.New("no entries found with the given prefix")
+	}
+	current = current.next
 
 	// Postavljamo iterator na prvi kljuc koji ima dati prefiks
-	for !bytes.HasPrefix(iter.Value().Key, prefix) {
-		if !iter.Next() {
+	for !bytes.HasPrefix(current.key, prefix) {
+		if current.next == nil {
 			return nil, errors.New("error: could not find prefix")
 		}
+		current = current.next
 	}
+
+	iter := &Iterator{current: current, value: deserializeEntry(current.value)}
+
 	return &PrefixIterator{
 		Iterator: *iter,
 		prefix:   prefix,
@@ -124,18 +151,20 @@ func (sl *SkipList) NewPrefixIterator(prefix []byte) (*PrefixIterator, error) {
 }
 
 // Prolazi kroz iterator i vraca samo one zapise koji imaju dati prefiks
-func (iter *PrefixIterator) Next() bool {
-	if !iter.Iterator.Next() {
-		return false
+func (iter *PrefixIterator) Next() (adapter.MemtableEntry, bool) {
+	if iter.Iterator.current == nil {
+		return adapter.MemtableEntry{}, false // Nema vise zapisa
 	}
-	for !bytes.HasPrefix(iter.Value().Key, iter.prefix) {
-		iter.Iterator.current = nil
-		return false
-	}
-	return true
-}
+	oldValue := iter.value
 
-// Vraca trenutni zapis iteratora
-func (iter *PrefixIterator) Value() *adapter.MemtableEntry {
-	return iter.Iterator.Value()
+	value, ok := iter.Iterator.Next()
+	if !ok {
+		return adapter.MemtableEntry{}, false
+	}
+
+	for !bytes.HasPrefix(value.Key, iter.prefix) {
+		iter.Stop()
+		return oldValue, true
+	}
+	return oldValue, true
 }

@@ -58,9 +58,12 @@ func TestBasicIterator(t *testing.T) {
 	}
 
 	count := 0
-	for iter.Next() {
-		value := iter.Value()
-		if value != nil {
+	for {
+		value, ok := iter.Next()
+		if !ok {
+			break
+		}
+		if len(value.Key) != 0 || len(value.Value) != 0 {
 			println("Key:", string(value.Key), "Value:", string(value.Value))
 			count++
 		} else {
@@ -96,11 +99,12 @@ func TestRangeIterator(t *testing.T) {
 	}
 
 	// Ocekujemo da cemo naci ove vrednosti, tri nije u listi, jer pocinjemo petlju sa iter.Next()
-	expectedValues := []string{"four", "five", "six", "seven", "eight", "nine"}
+	expectedValues := []string{"three", "four", "five", "six", "seven", "eight", "nine"}
 	i := 0
-	for iter.Next() {
-		value := iter.Value()
-		if value == nil {
+	for value, ok := iter.Next(); ok; value, ok = iter.Next() {
+		println("Key:", string(value.Key), "Value:", string(value.Value))
+
+		if value.Key == nil && value.Value == nil {
 			t.Error("Expected non-nil value")
 			continue
 		}
@@ -131,18 +135,22 @@ func TestPrefixIterate(t *testing.T) {
 
 	// Ocekivane vrednosti, jedan nije u listi, jer pocinjemo petlju sa iter.Next()
 	count := 0
-	for prefixIter.Next() {
-		value := prefixIter.Value()
-		if value == nil {
-			t.Error("Expected non-nil value")
+	for value, ok := prefixIter.Next(); ok; value, ok = prefixIter.Next() {
+		println("Key:", string(value.Key), "Value:", string(value.Value))
+		if len(value.Key) == 0 && len(value.Value) == 0 {
+			t.Error("Expected non-zero value")
 			continue
 		}
 		switch count {
 		case 0:
+			if string(value.Value) != "one" {
+				t.Errorf("Expected 'one', got '%s'", value.Value)
+			}
+		case 1:
 			if string(value.Value) != "two" {
 				t.Errorf("Expected 'two', got '%s'", value.Value)
 			}
-		case 1:
+		case 2:
 			if string(value.Value) != "three" {
 				t.Errorf("Expected 'three', got '%s'", value.Value)
 			}
@@ -152,7 +160,7 @@ func TestPrefixIterate(t *testing.T) {
 		count++
 	}
 
-	if count != 2 {
-		t.Errorf("Expected 2 iterations, got %d", count)
+	if count != 3 {
+		t.Errorf("Expected 3 iterations, got %d", count)
 	}
 }

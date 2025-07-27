@@ -14,6 +14,7 @@ type Iterator struct {
 	index    int
 	hashMap  *HashMap
 	maxIndex int
+	value    adapter.MemtableEntry
 }
 
 type RangeIterator struct {
@@ -38,19 +39,31 @@ func (hm *HashMap) NewIterator() (*Iterator, error) {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
+	value, found := hm.Search([]byte(keys[0]))
+	if !found {
+		return nil, errors.New("error: first key not found in hashmap")
+	}
 
 	iter := &Iterator{
 		keys:     keys,
 		hashMap:  hm,
-		index:    -1, // Start before first element
+		index:    0, // Start before first element
 		maxIndex: len(keys),
+		value:    *value,
 	}
 
 	return iter, nil
 }
 
 // Prebacujemo iterator na sledeci cvor, ako nije prazan, ili ako je kljuc rezervisan idemo na sledeci
-func (h *Iterator) Next() bool {
+func (h *Iterator) Next() (adapter.MemtableEntry, bool) {
+	if h.index >= h.maxIndex {
+		h.Stop()
+		return h.value, false
+	}
+
+	oldValue := h.value
+
 	h.index++
 
 	// Skip reserved keys
@@ -58,19 +71,19 @@ func (h *Iterator) Next() bool {
 		h.index++
 	}
 
-	return h.index < h.maxIndex
-}
-
-// Vraca trenutni zapis iteratora
-func (h *Iterator) Value() *adapter.MemtableEntry {
 	if h.index >= 0 && h.index < h.maxIndex {
 		value, found := h.hashMap.Search([]byte(h.keys[h.index]))
-		if !found {
-			return nil
+		if found {
+			h.value = *value
 		}
-		return value
 	}
-	return nil
+
+	return oldValue, true
+}
+
+func (h *Iterator) Stop() {
+	h.index = h.maxIndex              // Postavljamo index na maxIndex da bi se iterator zaustavio
+	h.value = adapter.MemtableEntry{} // Resetujemo vrednost
 }
 
 // Inicijalizuje iterator koji vraca samo zapise u datom opsegu
@@ -89,7 +102,7 @@ func (hm *HashMap) NewRangeIterator(startKey []byte, endKey []byte) (*RangeItera
 	startIndex := -1
 	for i, key := range keys {
 		if !util.CheckKeyReserved(key) && bytes.Compare([]byte(key), startKey) >= 0 {
-			startIndex = i - 1
+			startIndex = i
 			break
 		}
 	}
@@ -99,11 +112,17 @@ func (hm *HashMap) NewRangeIterator(startKey []byte, endKey []byte) (*RangeItera
 		startIndex = len(keys)
 	}
 
+	value, found := hm.Search([]byte(keys[startIndex]))
+	if !found {
+		return nil, errors.New("error: start key not found in hashmap")
+	}
+
 	iter := &Iterator{
 		keys:     keys,
 		hashMap:  hm,
 		index:    startIndex,
 		maxIndex: len(keys),
+		value:    *value,
 	}
 
 	return &RangeIterator{
@@ -114,43 +133,57 @@ func (hm *HashMap) NewRangeIterator(startKey []byte, endKey []byte) (*RangeItera
 }
 
 // Prolazi kroz iterator i vraca samo one zapise koji su u opsegu startKey i endKey
-func (iter *RangeIterator) Next() bool {
-	if !iter.Iterator.Next() {
-		return false
+func (iter *RangeIterator) Next() (adapter.MemtableEntry, bool) {
+	oldValue := iter.value
+
+	value, ok := iter.Iterator.Next()
+	if !ok {
+		return adapter.MemtableEntry{}, false
 	}
 
-	currentValue := iter.Value()
-	if currentValue != nil && bytes.Compare(currentValue.Key, iter.endKey) > 0 {
-		return false
+	if bytes.Compare(value.Key, iter.endKey) > 0 {
+		iter.Stop()
+		return adapter.MemtableEntry{}, false
 	}
 
-	return true
-}
-
-// Vraca trenutni zapis iteratora
-func (iter *RangeIterator) Value() *adapter.MemtableEntry {
-	return iter.Iterator.Value()
+	return oldValue, true
 }
 
 // Inicijalizuje iterator koji vraca samo zapise sa datim prefiksom
 func (hm *HashMap) NewPrefixIterator(prefix []byte) (*PrefixIterator, error) {
-	iter, err := hm.NewIterator()
-	if err != nil {
-		return nil, err
+	if len(hm.data) == 0 {
+		return nil, errors.New("error: hashmap is empty")
 	}
 
-	if !iter.Next() {
-		return nil, errors.New("error: iterator is empty")
+	keys := make([]string, 0)
+	for k := range hm.data {
+		keys = append(keys, k)
 	}
+	sort.Strings(keys)
 
-	for iter.Value() != nil && !bytes.HasPrefix(iter.Value().Key, prefix) {
-		if !iter.Next() {
-			return nil, errors.New("error: could not find prefix")
+	startIndex := -1
+	for i, key := range keys {
+		if !util.CheckKeyReserved(key) && bytes.HasPrefix([]byte(key), prefix) {
+			startIndex = i
+			break
 		}
 	}
 
-	if iter.Value() == nil {
+	if startIndex == -1 {
 		return nil, errors.New("error: could not find prefix")
+	}
+
+	value, found := hm.Search([]byte(keys[startIndex]))
+	if !found {
+		return nil, errors.New("error: prefix not found in hashmap")
+	}
+
+	iter := &Iterator{
+		keys:     keys,
+		hashMap:  hm,
+		index:    startIndex,
+		maxIndex: len(keys),
+		value:    *value,
 	}
 
 	return &PrefixIterator{
@@ -160,20 +193,18 @@ func (hm *HashMap) NewPrefixIterator(prefix []byte) (*PrefixIterator, error) {
 }
 
 // Prolazi kroz iterator i vraca samo one zapise koji imaju dati prefiks
-func (iter *PrefixIterator) Next() bool {
-	if !iter.Iterator.Next() {
-		return false
+func (iter *PrefixIterator) Next() (adapter.MemtableEntry, bool) {
+	oldValue := iter.value
+
+	value, ok := iter.Iterator.Next()
+	if !ok {
+		return adapter.MemtableEntry{}, false
 	}
 
-	currentValue := iter.Value()
-	if currentValue == nil || !bytes.HasPrefix(currentValue.Key, iter.prefix) {
-		return false
+	if !bytes.HasPrefix(value.Key, iter.prefix) {
+		iter.Stop()
+		return adapter.MemtableEntry{}, false
 	}
 
-	return true
-}
-
-// Vraca trenutni zapis iteratora
-func (iter *PrefixIterator) Value() *adapter.MemtableEntry {
-	return iter.Iterator.Value()
+	return oldValue, true
 }
