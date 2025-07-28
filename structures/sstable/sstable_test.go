@@ -9,14 +9,13 @@ import (
 	"github.com/iigor000/database/structures/memtable"
 )
 
-func TestSSTable(t *testing.T) {
-	println("Testing SSTable creation...")
-	// Create a configuration for the SSTable
-	conf := &config.Config{
+func CreateConfig() *config.Config {
+	return &config.Config{
 		SSTable: config.SSTableConfig{
 			SstableDirectory: "./sstable_test",
 			UseCompression:   true,
 			SummaryLevel:     2,
+			SingleFile:       false,
 		},
 		Memtable: config.MemtableConfig{
 			NumberOfMemtables: 1,
@@ -33,6 +32,13 @@ func TestSSTable(t *testing.T) {
 			Capacity: 100,
 		},
 	}
+}
+
+func TestSSTable(t *testing.T) {
+	println("Testing SSTable creation...")
+	// Create a configuration for the SSTable
+	conf := CreateConfig()
+
 	// Initialize a memtable with some data
 	memtable := memtable.NewMemtable(conf)
 	// Add some entries to the memtable
@@ -82,28 +88,7 @@ func TestSSTable(t *testing.T) {
 }
 
 func TestSSTableRead(t *testing.T) {
-	conf := &config.Config{
-		SSTable: config.SSTableConfig{
-			SstableDirectory: "./sstable_test",
-			UseCompression:   true,
-			SummaryLevel:     2,
-			SingleFile:       true,
-		},
-		Memtable: config.MemtableConfig{
-			NumberOfMemtables: 1,
-			NumberOfEntries:   5,
-			Structure:         "skiplist",
-		},
-		Skiplist: config.SkiplistConfig{
-			MaxHeight: 16,
-		},
-		Block: config.BlockConfig{
-			BlockSize: 4096,
-		},
-		Cache: config.CacheConfig{
-			Capacity: 100,
-		},
-	}
+	conf := CreateConfig()
 
 	// Initialize a memtable with some data
 	memtable := memtable.NewMemtable(conf)
@@ -170,28 +155,7 @@ func TestSSTableRead(t *testing.T) {
 
 // TestSSTableIterate tests the iteration functionality of the SSTable
 func TestSSTableIterate(t *testing.T) {
-	conf := &config.Config{
-		SSTable: config.SSTableConfig{
-			SstableDirectory: "./sstable_test",
-			UseCompression:   true,
-			SummaryLevel:     2,
-			SingleFile:       true,
-		},
-		Memtable: config.MemtableConfig{
-			NumberOfMemtables: 1,
-			NumberOfEntries:   5,
-			Structure:         "skiplist",
-		},
-		Skiplist: config.SkiplistConfig{
-			MaxHeight: 16,
-		},
-		Block: config.BlockConfig{
-			BlockSize: 4096,
-		},
-		Cache: config.CacheConfig{
-			Capacity: 100,
-		},
-	}
+	conf := CreateConfig()
 
 	bm := block_organization.NewBlockManager(conf)
 	bc := block_organization.NewBlockCache(conf)
@@ -265,28 +229,7 @@ func TestSSTableIterate(t *testing.T) {
 }
 
 func TestSSTableScan(t *testing.T) {
-	conf := &config.Config{
-		SSTable: config.SSTableConfig{
-			SstableDirectory: "./sstable_test",
-			UseCompression:   true,
-			SummaryLevel:     2,
-			SingleFile:       true,
-		},
-		Memtable: config.MemtableConfig{
-			NumberOfMemtables: 1,
-			NumberOfEntries:   5,
-			Structure:         "skiplist",
-		},
-		Skiplist: config.SkiplistConfig{
-			MaxHeight: 16,
-		},
-		Block: config.BlockConfig{
-			BlockSize: 4096,
-		},
-		Cache: config.CacheConfig{
-			Capacity: 100,
-		},
-	}
+	conf := CreateConfig()
 
 	bm := block_organization.NewBlockManager(conf)
 	bc := block_organization.NewBlockCache(conf)
@@ -325,28 +268,7 @@ func TestSSTableScan(t *testing.T) {
 }
 
 func TestSSTableValidate(t *testing.T) {
-	conf := &config.Config{
-		SSTable: config.SSTableConfig{
-			SstableDirectory: "./sstable_test",
-			UseCompression:   true,
-			SummaryLevel:     2,
-			SingleFile:       true,
-		},
-		Memtable: config.MemtableConfig{
-			NumberOfMemtables: 1,
-			NumberOfEntries:   5,
-			Structure:         "skiplist",
-		},
-		Skiplist: config.SkiplistConfig{
-			MaxHeight: 16,
-		},
-		Block: config.BlockConfig{
-			BlockSize: 4096,
-		},
-		Cache: config.CacheConfig{
-			Capacity: 100,
-		},
-	}
+	conf := CreateConfig()
 
 	bm := block_organization.NewBlockManager(conf)
 	bc := block_organization.NewBlockCache(conf)

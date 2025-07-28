@@ -140,6 +140,9 @@ func (ms *Memtables) NewMemtablesIterator() *MemtablesIterator {
 		it := memtable.NewMemtableIterator()
 		// Dodaj null check
 		if it != nil {
+			if it.currentEntry.Key == nil {
+				continue
+			}
 			it.currentEntry = currentEntry // Postavi trenutni unos na prvi unos
 			iterators = append(iterators, it)
 		}

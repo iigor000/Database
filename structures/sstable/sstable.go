@@ -3,6 +3,7 @@ package sstable
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 
@@ -449,12 +450,30 @@ func (s *SSTable) ReadRecordWithKey(bm *block_organization.CachedBlockManager, b
 	}, nextBlock
 }
 
+func ReadTOC(path string) map[string]string {
+	toc := make(map[string]string)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		fmt.Printf("failed to read TOC file '%s': %v\n", path, err)
+		return toc
+	}
+	lines := strings.Split(string(data), "\n")
+	for _, line := range lines {
+		parts := strings.SplitN(line, ": ", 2)
+		if len(parts) == 2 {
+			toc[parts[0]] = parts[1]
+		}
+	}
+	return toc
+}
+
 func StartSSTable(level int, gen int, conf *config.Config, dict *compression.Dictionary, cbm *block_organization.CachedBlockManager) (*SSTable, error) {
 	// Ucitavamo bloom filter i summary iz fajla
 	if gen < 1 {
 		return nil, fmt.Errorf("invalid generation number: %d", gen)
 	}
 	dir := fmt.Sprintf("%s/%d/%d", conf.SSTable.SstableDirectory, level, gen)
+
 	if conf.SSTable.SingleFile {
 		sstable := &SSTable{
 			Gen:        gen,
@@ -512,16 +531,19 @@ func StartSSTable(level int, gen int, conf *config.Config, dict *compression.Dic
 		sstable.Summary = summary
 		return sstable, nil
 	}
+	//Ucitavamo TOC iz fajla
+	tocPath := CreateFileName(dir, gen, "TOC", "txt")
+	toc := ReadTOC(tocPath)
 
 	// Ucitavamo BloomFiler
-	bfPath := CreateFileName(dir, gen, "Filter", "db")
+	bfPath := toc["Filter"]
 	bf, err := ReadBloomFilter(bfPath, conf, cbm)
 	if err != nil {
 		return nil, fmt.Errorf("error reading bloom filter: %w", err)
 	}
 	println("Reading summary..")
 	// Ucitavamo Summary
-	summaryPath := CreateFileName(dir, gen, "Summary", "db")
+	summaryPath := toc["Summary"]
 	summary, err := ReadSummary(summaryPath, conf, 0, 0, cbm)
 	if err != nil {
 		return nil, fmt.Errorf("error reading summary: %w", err)
@@ -529,7 +551,7 @@ func StartSSTable(level int, gen int, conf *config.Config, dict *compression.Dic
 	println("Summary loaded from file:", summaryPath)
 
 	// Ucitavamo kompresiju
-	dictpath := CreateFileName(dir, gen, "CompressionInfo", "db")
+	dictpath := toc["Compression"]
 	UseCompression, err := ReadCompressionInfo(dictpath, conf, cbm)
 	if err != nil {
 		return nil, fmt.Errorf("error reading compression dictionary: %w", err)
@@ -542,7 +564,7 @@ func StartSSTable(level int, gen int, conf *config.Config, dict *compression.Dic
 
 	data := &Data{
 		DataFile: File{
-			Path:       CreateFileName(dir, gen, "Data", "db"),
+			Path:       toc["Data"],
 			Offset:     0,
 			SizeOnDisk: -1,
 		},
@@ -550,7 +572,7 @@ func StartSSTable(level int, gen int, conf *config.Config, dict *compression.Dic
 	}
 	index := &Index{
 		IndexFile: File{
-			Path:       CreateFileName(dir, gen, "Index", "db"),
+			Path:       toc["Index"],
 			Offset:     0,
 			SizeOnDisk: -1,
 		},
