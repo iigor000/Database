@@ -1,0 +1,7 @@
+Generation: 1
+Data: testdata\db_test\sstable/1/1/usertable-000001-Data.db
+Index: testdata\db_test\sstable/1/1/usertable-000001-Index.db
+Summary: testdata\db_test\sstable/1/1/usertable-000001-Summary.db
+Filter: testdata\db_test\sstable/1/1/usertable-000001-Filter.db
+Metadata: testdata\db_test\sstable/1/1/usertable-000001-Metadata.db
+Compression: testdata\db_test\sstable/1/1/usertable-000001-CompressionInfo.db

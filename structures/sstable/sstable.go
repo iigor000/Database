@@ -354,10 +354,14 @@ func BuildSSTable(entries []adapter.MemtableEntry, conf *config.Config, dict *co
 			Structure:         "skiplist",
 		},
 	}
+	println("Building SSTable with", len(entries), "entries")
+
 	memtable := memtable.NewMemtable(conf1)
 	for _, entry := range entries {
+		println("Adding entry to Memtable:", string(entry.Key), "Value:", string(entry.Value))
 		memtable.Update(entry.Key, entry.Value, entry.Timestamp, entry.Tombstone)
 	}
+	memtable.Capacity = memtable.Size
 	return FlushSSTable(conf, *memtable, level, generation, dict, cbm)
 }
 

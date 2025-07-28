@@ -182,7 +182,6 @@ func (db *Database) get(key string) ([]byte, bool, error) {
 	entry, found := db.memtables.Search(keyByte)
 	if found {
 		if !entry.Tombstone {
-			println("Found in Memtable:", key, "Value:", string(entry.Value))
 			return entry.Value, true, nil
 		}
 		return nil, false, nil

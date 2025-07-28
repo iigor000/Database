@@ -136,7 +136,7 @@ func TestSSTableRead(t *testing.T) {
 	}
 	println("Testing SSTable read...")
 	// Read the SSTable from disk
-	readSSTable, err := StartSSTable(sstable.Level, sstable.Gen, conf, dict, cbm)
+	readSSTable, err := StartSSTable(1, sstable.Gen, conf, dict, cbm)
 	if err != nil {
 		t.Fatal("Failed to read SSTable:", err)
 	}

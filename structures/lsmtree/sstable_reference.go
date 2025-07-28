@@ -20,7 +20,8 @@ type SSTableReference struct {
 
 // getSSTableReferences vraća sve SSTable-ove na datom nivou, sortirane po generaciji
 func getSSTableReferences(conf *config.Config, level int, ascending bool) ([]*SSTableReference, error) {
-	dir := fmt.Sprintf("%s/%d", conf.SSTable.SstableDirectory, level)
+	dir := fmt.Sprintf("../%s/%d", conf.SSTable.SstableDirectory, level)
+
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -29,7 +30,7 @@ func getSSTableReferences(conf *config.Config, level int, ascending bool) ([]*SS
 
 		return nil, fmt.Errorf("failed to read level %d directory '%s' : %w", level, dir, err)
 	}
-
+	println("Pronađen direktorijum:", dir)
 	var refs []*SSTableReference
 
 	for _, entry := range entries {
