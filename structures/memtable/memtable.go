@@ -47,7 +47,6 @@ func (m *Memtables) Update(key []byte, value []byte, timestamp int64, tombstone 
 	if i == m.NumberOfMemtables-1 {
 		if m.Memtables[i].Size >= m.Memtables[i].Capacity {
 			// Ako je poslednji Memtable pun, onda ga flush-ujemo na disk
-			//m.memtables[0].FlushToDisk(m.conf, m.genToFlush)
 			flushed = true
 
 		}
@@ -103,7 +102,7 @@ func NewMemtable(conf *config.Config) *Memtable {
 	case "skiplist":
 		struc = skiplist.MakeSkipList(conf.Skiplist.MaxHeight)
 	case "btree":
-		struc = btree.NewBTree(16)
+		struc = btree.NewBTree(conf.BTree.MinSize)
 	case "hashmap":
 		struc = hashmap.NewHashMap()
 	default:
@@ -115,7 +114,6 @@ func NewMemtable(conf *config.Config) *Memtable {
 // CRUD operacije
 // Update dodaje ili azurira na osnovu kljuca u Memtable
 func (m *Memtable) Update(key []byte, value []byte, timestamp int64, tombstone bool) {
-	//println("Updating key:", string(key), "with value:", string(value), "timestamp:", timestamp, "tombstone:", tombstone)
 	_, exist := m.Search(key)
 	if !exist {
 		m.Keys = append(m.Keys, key)
@@ -149,40 +147,6 @@ func (m *Memtable) Print() {
 			}
 		}
 	}
-}
-
-func (m *Memtables) GetEntryWithPrefix(prefix string, memtableIndex int, entryIndex int) (adapter.MemtableEntry, int, int) {
-	// Prolazimo kroz sve Memtable i trazimo
-	for i := memtableIndex; i < m.NumberOfMemtables; i++ {
-		memtable := m.Memtables[i]
-		// Proveravamo da li posmatrani kljuc ima prefiks
-		for j := entryIndex; j < len(memtable.Keys); j++ {
-			key := memtable.Keys[j]
-			if bytes.HasPrefix(key, []byte(prefix)) {
-				entry, found := memtable.Search(key)
-				if found && !entry.Tombstone {
-					return *entry, i, j // Vracamo entry, indeks Memtable-a i indeks kljuca
-				}
-			}
-		}
-	}
-	return adapter.MemtableEntry{}, -1, -1 // Ako nismo nasli kljuc, vracamo nil i -1
-}
-
-func (m *Memtables) GetEntry(memtableIndex int, entryIndex int) (*adapter.MemtableEntry, bool) {
-	if memtableIndex < 0 || memtableIndex >= len(m.Memtables) {
-		return nil, false
-	}
-	memtable := m.Memtables[memtableIndex]
-	if entryIndex < 0 || entryIndex >= len(memtable.Keys) {
-		return nil, false
-	}
-	key := memtable.Keys[entryIndex]
-	entry, found := memtable.Search(key)
-	if !found {
-		return nil, false
-	}
-	return entry, true
 }
 
 func (ms *Memtables) GetFirstEntry() adapter.MemtableEntry {
@@ -287,10 +251,6 @@ func (m *Memtable) GetNextEntry(key []byte) (adapter.MemtableEntry, bool) {
 		return *entry, true
 	}
 	return adapter.MemtableEntry{}, false
-}
-
-func (m *Memtable) GetSize() int {
-	return m.Size
 }
 
 func (m *Memtable) GetAllEntries() []adapter.MemtableEntry {

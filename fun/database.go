@@ -63,7 +63,7 @@ func NewDatabase(config *config.Config, username string) (*Database, error) {
 	}
 	//?? TODO: Treba da se ucita BloomFilter i Summary iz SSTable-a
 	cache := cache.NewCache(config)
-	dict, err := compression.Read(config.Compression.DictionaryDir)
+	dict, err := compression.Read(config.Compression.DictionaryDir, cbm)
 	if err != nil {
 		return nil, err
 	}
@@ -119,7 +119,7 @@ func (db *Database) put(key string, value []byte) error {
 		// Flush Memtable na disk
 		println("Flushing Memtable to disk...")
 		println("Gen to Flush:", db.memtables.GenToFlush)
-		sstable.FlushSSTable(db.config, *db.memtables.Memtables[0], db.memtables.GenToFlush, db.compression, db.CacheBlockManager)
+		sstable.FlushSSTable(db.config, *db.memtables.Memtables[0], 1, db.memtables.GenToFlush, db.compression, db.CacheBlockManager)
 
 		db.lastFlushedGen = db.memtables.GenToFlush // azuriramo poslednju flushovanu generaciju
 		if err := db.wal.RemoveSegmentsUpTo(db.calculateLWM()); err != nil {
@@ -127,7 +127,7 @@ func (db *Database) put(key string, value []byte) error {
 		}
 
 		// Proverava uslov za kompakciju i vrši kompakciju ako je potrebno (počinje proveru od prvog nivoa)
-		// lsmtree.Compact(db.config, db.compression)
+		lsmtree.Compact(db.config, db.compression, db.CacheBlockManager)
 
 		recordsToCache := db.memtables.Memtables[0].GetAllEntries()
 
@@ -197,7 +197,7 @@ func (db *Database) get(key string) ([]byte, bool, error) {
 		return nil, false, nil
 	}
 
-	record, err := lsmtree.Get(db.config, keyByte, db.compression)
+	record, err := lsmtree.Get(db.config, keyByte, db.compression, db.CacheBlockManager)
 	if err != nil {
 		return nil, false, err
 	} else {

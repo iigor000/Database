@@ -2,6 +2,9 @@ package compression
 
 import (
 	"testing"
+
+	"github.com/iigor000/database/config"
+	"github.com/iigor000/database/structures/block_organization"
 )
 
 func TestDictionary(t *testing.T) {
@@ -64,18 +67,35 @@ func TestSerialization(t *testing.T) {
 
 // Test Read and Write to file
 func TestReadWriteFile(t *testing.T) {
+	conf := &config.Config{
+		Block: config.BlockConfig{
+			BlockSize: 4096,
+		},
+		Cache: config.CacheConfig{
+			Capacity: 100,
+		},
+	}
+
+	bm := block_organization.NewBlockManager(conf)
+	bc := block_organization.NewBlockCache(conf)
+	cbm := &block_organization.CachedBlockManager{
+		BM: bm,
+		C:  bc,
+	}
+
 	dict := NewDictionary()
 	key0 := []byte("key0")
 	key1 := []byte("key1")
 	dict.Add(key0)
 	dict.Add(key1)
+
 	// Write
-	err := dict.Write("test_dict.db")
+	err := dict.Write("test_dict.db", cbm)
 	if err != nil {
 		t.Fatalf("WriteToFile failed: %v", err)
 	}
 	// Read
-	decoded, err := Read("test_dict.db")
+	decoded, err := Read("test_dict.db", cbm)
 	if err != nil {
 		t.Fatalf("ReadFromFile failed: %v", err)
 	}

@@ -4,8 +4,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 
 	"github.com/iigor000/database/config"
+	"github.com/iigor000/database/structures/block_organization"
 )
 
 type File struct {
@@ -68,6 +71,7 @@ func WriteTxtToFile(path string, content string) error {
 	return nil
 }
 
+// CalculateDataSize izracunava velicinu podataka u SSTable
 func CalculateDataSize(path string, conf *config.Config) int64 {
 	if conf.SSTable.SingleFile {
 		info, err := os.Stat(path)
@@ -97,4 +101,27 @@ func CalculateDataSize(path string, conf *config.Config) int64 {
 		return 0
 	}
 	return totalSize
+}
+
+// ReadOffsetsFromFile cita offsete iz fajla
+func ReadOffsetsFromFile(path string, conf *config.Config, bm *block_organization.CachedBlockManager) (map[string]int64, error) {
+	offsets := make(map[string]int64)
+	block, err := bm.ReadBlock(path, 0)
+	if err != nil {
+		return nil, fmt.Errorf("error reading offsets from file %s: %w", path, err)
+	}
+	lines := strings.Split(string(block), "\n")
+	for _, line := range lines {
+		parts := strings.Split(line, ": ")
+		if len(parts) == 2 {
+			val, err := strconv.ParseInt(parts[1], 10, 64)
+			if err == nil {
+				offsets[parts[0]] = val
+			}
+		}
+	}
+	if len(offsets) == 0 {
+		return nil, fmt.Errorf("no offsets found in file %s", path)
+	}
+	return offsets, nil
 }
