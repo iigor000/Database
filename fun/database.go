@@ -7,6 +7,7 @@ import (
 
 	"github.com/iigor000/database/config"
 	"github.com/iigor000/database/structures/adapter"
+
 	"github.com/iigor000/database/structures/block_organization"
 	"github.com/iigor000/database/structures/cache"
 	"github.com/iigor000/database/structures/compression"
@@ -32,7 +33,15 @@ type Database struct {
 }
 
 func NewDatabase(config *config.Config, username string) (*Database, error) {
-	wal, err := writeaheadlog.SetOffWAL(config)
+	// Prvo kreiramo CachedBlockManager
+	bm := block_organization.NewBlockManager(config)
+	bc := block_organization.NewBlockCache(config)
+	cbm := &block_organization.CachedBlockManager{
+		BM: bm,
+		C:  bc,
+	}
+
+	wal, err := writeaheadlog.SetOffWAL(config, cbm)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize write-ahead log: %w", err)
 	}
@@ -59,12 +68,6 @@ func NewDatabase(config *config.Config, username string) (*Database, error) {
 		return nil, err
 	}
 
-	bm := block_organization.NewBlockManager(config)
-	bc := block_organization.NewBlockCache(config)
-	cbm := &block_organization.CachedBlockManager{
-		BM: bm,
-		C:  bc,
-	}
 	return &Database{
 		wal:               wal,
 		memtables:         memtables,

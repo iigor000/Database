@@ -42,18 +42,17 @@ type WALSegment struct {
 	segmentNumber int
 	writtenBlocks int
 	isActive      bool
-	blockManager  *block_organization.BlockManager
-	cachedBM      *block_organization.CachedBlockManager
 }
 
 type WAL struct {
 	config        *config.Config
 	segments      []*WALSegment
 	activeSegment *WALSegment
+	cachedBM      *block_organization.CachedBlockManager
 }
 
 // Funkcija koja inicijalizuje wal
-func SetOffWAL(cfg *config.Config) (*WAL, error) {
+func SetOffWAL(cfg *config.Config, cbm *block_organization.CachedBlockManager) (*WAL, error) {
 	if err := os.MkdirAll(cfg.Wal.WalDirectory, 0755); err != nil { // Ako ne postoji folder za wal segmente, kreiramo ga
 		return nil, fmt.Errorf("error creating wal directory: %v", err)
 	}
@@ -69,13 +68,8 @@ func SetOffWAL(cfg *config.Config) (*WAL, error) {
 			segmentNumber, _ := strconv.Atoi(matches[1]) // Uzimamo broj segmenta
 			segments = append(segments, &WALSegment{     // Dodajemo segment u listu
 				filePath:      filepath.Join(cfg.Wal.WalDirectory, file.Name()),
-				segmentNumber: segmentNumber,                                                    // Redni broj segmenta
-				isActive:      false,                                                            // Inicijalno nije aktivan
-				blockManager:  &block_organization.BlockManager{BlockSize: cfg.Block.BlockSize}, // BlockManager za upravljanje blokovima
-				cachedBM: &block_organization.CachedBlockManager{ // CachedBlockManager za kesiranje blokova
-					BM: &block_organization.BlockManager{BlockSize: cfg.Block.BlockSize},
-					C:  block_organization.NewBlockCache(cfg),
-				},
+				segmentNumber: segmentNumber, // Redni broj segmenta
+				isActive:      false,         // Inicijalno nije aktivan
 			})
 
 		}
@@ -87,6 +81,7 @@ func SetOffWAL(cfg *config.Config) (*WAL, error) {
 	wal := &WAL{
 		config:   cfg,
 		segments: segments,
+		cachedBM: cbm, // Prosledjujemo CachedBlockManager
 	}
 	if len(segments) == 0 { // Ako nema segmenata, kreiramo novi
 		if err := wal.newSegment(); err != nil {
@@ -121,11 +116,6 @@ func (w *WAL) newSegment() error {
 		segmentNumber: segmentNum,
 		isActive:      true,
 		writtenBlocks: 0,
-		blockManager:  &block_organization.BlockManager{BlockSize: w.config.Block.BlockSize},
-		cachedBM: &block_organization.CachedBlockManager{
-			BM: &block_organization.BlockManager{BlockSize: w.config.Block.BlockSize},
-			C:  block_organization.NewBlockCache(w.config), // Prosleđujemo CEO config
-		},
 	}
 
 	w.segments = append(w.segments, newSegment)
@@ -169,7 +159,7 @@ func (w *WAL) Append(key, value []byte, tombstone bool) error {
 	}
 
 	// Upisivanje serijalizovanog zapisa u aktivni segment
-	_, err = w.activeSegment.cachedBM.Append(w.activeSegment.filePath, serialized)
+	_, err = w.cachedBM.Append(w.activeSegment.filePath, serialized)
 	if err != nil {
 		return err
 	}
@@ -240,7 +230,7 @@ func (w *WAL) ReadRecords() ([]*WALRecord, error) {
 		if fileInfo.Size() == 0 {
 			continue
 		}
-		data, err := segment.cachedBM.Read(segment.filePath, 0)
+		data, err := w.cachedBM.Read(segment.filePath, 0)
 		if err != nil {
 			return nil, fmt.Errorf("error reading segment %s: %v", segment.filePath, err)
 		}
