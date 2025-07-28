@@ -76,7 +76,7 @@ func sortReferencesByGen(refs []*SSTableReference, ascending ...bool) {
 
 // OpenSSTable otvara SSTable na datom nivou i generaciji
 func OpenSSTable(level, gen int, conf *config.Config, cbm *block_organization.CachedBlockManager) (*sstable.SSTable, error) {
-	dict, err := compression.Read(conf.Compression.DictionaryDir)
+	dict, err := compression.Read(conf.Compression.DictionaryDir, cbm)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read compression dictionary: %w", err)
 	}
@@ -86,30 +86,12 @@ func OpenSSTable(level, gen int, conf *config.Config, cbm *block_organization.Ca
 
 // DeleteFiles briše sve fajlove vezane za odgovarajući SSTable
 func (s *SSTableReference) DeleteFiles(conf *config.Config) error {
-	// TODO: napraviti da radi i za SingleFile SSTable
-	elements := []struct {
-		element string
-		ext     string
-	}{
-		{"Data", ".db"},
-		{"Index", ".db"},
-		{"Summary", ".db"},
-		{"Filter", ".db"},
-		{"Metadata", ".db"},
-		{"Dictionary", ".db"},
-		{"TOC", ".txt"},
-	}
-	path := fmt.Sprintf("%s/%d/%d", conf.SSTable.SstableDirectory, s.Level, s.Gen)
+	sstableDir := fmt.Sprintf("%s/%d/%d", conf.SSTable.SstableDirectory, s.Level, s.Gen)
 
-	for _, element := range elements {
-		filePath := sstable.CreateFileName(path, s.Gen, element.element, element.ext)
-		if sstable.FileExists(filePath) {
-			if err := os.Remove(filePath); err != nil {
-				return fmt.Errorf("failed to remove file %s: %w", filePath, err)
-			}
-		}
+	// Briše direktorijum i sve fajlove unutar njega
+	if err := os.RemoveAll(sstableDir); err != nil {
+		return fmt.Errorf("failed to remove SSTable directory %s: %w", sstableDir, err)
 	}
-
 	return nil
 }
 

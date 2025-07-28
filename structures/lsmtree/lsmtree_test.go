@@ -16,6 +16,7 @@ import (
 )
 
 var cbm *block_organization.CachedBlockManager
+var dict *compression.Dictionary
 
 func createTestConfig(t *testing.T) *config.Config {
 	dir := t.TempDir()
@@ -81,19 +82,28 @@ func createTestSSTable(t *testing.T, conf *config.Config, level int, gen int, ke
 	t.Helper()
 	ref := &SSTableReference{Level: level, Gen: gen}
 
+	var err error
+	dict, err = compression.Read(conf.Compression.DictionaryDir, cbm)
+	if err != nil {
+		t.Fatalf("failed to read compression dictionary: %v", err)
+	}
+
 	// Kreiraj jednostavan SSTable builder i upiši jedan zapis
 	builder, err := NewSSTableBuilder(level, gen, conf)
 	if err != nil {
 		t.Fatalf("failed to create SSTable builder: %v", err)
 	}
-	err = builder.Write(&adapter.MemtableEntry{Key: key, Value: value, Timestamp: 1, Tombstone: false})
+
+	err = builder.Write(adapter.MemtableEntry{Key: key, Value: value, Timestamp: 1, Tombstone: false})
 	if err != nil {
 		t.Fatalf("failed to write record: %v", err)
 	}
-	err = builder.Finish(cbm)
+
+	err = builder.Finish(cbm, dict)
 	if err != nil {
 		t.Fatalf("failed to finish SSTable build: %v", err)
 	}
+
 	return ref
 }
 
@@ -104,11 +114,10 @@ func TestGetAndCompact(t *testing.T) {
 	// Napravi 2 SSTable-ova sa različitim ključevima na nivou 1
 	createTestSSTable(t, conf, 1, 1, []byte("key1"), []byte("value1"))
 	createTestSSTable(t, conf, 1, 2, []byte("key2"), []byte("value2"))
+
 	dict.Add([]byte("key1"))
 	dict.Add([]byte("key2"))
-	fmt.Print("Upisani ključevi: key1, key2\n")
 
-	fmt.Print("Testiranje Get funkcije...\n")
 	// Test Get za key1
 	rec, err := Get(conf, []byte("key1"), dict, cbm)
 	if err != nil {
@@ -199,7 +208,7 @@ func TestMergeTables(t *testing.T) {
 	ref1 := createTestSSTable(t, conf, 1, 1, []byte("a"), []byte("valueA"))
 	ref2 := createTestSSTable(t, conf, 1, 2, []byte("b"), []byte("valueB"))
 
-	err := mergeTables(conf, 2, cbm, ref1, ref2)
+	err := mergeTables(conf, 2, cbm, dict, ref1, ref2)
 	if err != nil {
 		t.Fatalf("mergeTables failed: %v", err)
 	}

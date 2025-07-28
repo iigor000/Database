@@ -253,6 +253,17 @@ func (m *Memtable) GetNextEntry(key []byte) (adapter.MemtableEntry, bool) {
 	return adapter.MemtableEntry{}, false
 }
 
+func (m *Memtable) GetAllEntries() []adapter.MemtableEntry {
+	entries := make([]adapter.MemtableEntry, 0, m.Size)
+	for _, key := range m.Keys {
+		entry, found := m.Structure.Search(key)
+		if found && !entry.Tombstone {
+			entries = append(entries, *entry)
+		}
+	}
+	return entries
+}
+
 func (m *Memtable) GetFirstEntryWithPrefix(prefix string) (adapter.MemtableEntry, bool) {
 	minKey := m.Keys[0]
 	for _, key := range m.Keys {

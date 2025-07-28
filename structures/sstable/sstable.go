@@ -33,7 +33,7 @@ type SSTable struct {
 }
 
 // FlushSSTable kreira SSTable iz Memtable i upisuje je na disk
-func FlushSSTable(conf *config.Config, memtable memtable.Memtable, generation int, dict *compression.Dictionary, cbm *block_organization.CachedBlockManager) *SSTable {
+func FlushSSTable(conf *config.Config, memtable memtable.Memtable, level int, generation int, dict *compression.Dictionary, cbm *block_organization.CachedBlockManager) *SSTable {
 	//Sortiramo memtable.Keys da bismo imali uredjen redosled
 	sort.Slice(memtable.Keys, func(i, j int) bool {
 		return bytes.Compare(memtable.Keys[i], memtable.Keys[j]) < 0
@@ -49,9 +49,8 @@ func FlushSSTable(conf *config.Config, memtable memtable.Memtable, generation in
 		sstable.CompressionKey = nil
 	}
 
-	sstable.Level = 1 // Postavljamo nivo na 1, jer se Memtable flushuje kao SSTable na prvi nivo
 	sstable.Gen = generation
-	path := fmt.Sprintf("%s/%d/%d", conf.SSTable.SstableDirectory, sstable.Level, sstable.Gen)
+	path := fmt.Sprintf("%s/%d/%d", conf.SSTable.SstableDirectory, level, sstable.Gen)
 	err := CreateDirectoryIfNotExists(path)
 	if err != nil {
 		panic("Error creating directory for SSTable: " + err.Error())
@@ -345,38 +344,20 @@ func (sstable *SSTable) ReadFilterMetaCompression(path string, offsets map[strin
 	return nil
 }
 
-func NewEmptySSTable(conf *config.Config, level int, generation int, cbm *block_organization.CachedBlockManager) *SSTable {
-	sstable := &SSTable{
-		Data:           &Data{Records: []DataRecord{}},
-		Index:          &Index{Records: []IndexRecord{}},
-		Summary:        &Summary{Records: []SummaryRecord{}},
-		Gen:            generation,
-		Level:          level,
-		UseCompression: conf.SSTable.UseCompression,
-		CompressionKey: nil,
-	}
-	if sstable.UseCompression {
-		dict, err := compression.Read(conf.Compression.DictionaryDir, cbm)
-		if err != nil {
-			panic("Error reading compression dictionary: " + err.Error())
-		}
-
-		sstable.CompressionKey = dict
-	}
-	return sstable
-}
-
 // Kreira Stable od liste Data Record-a
-func BuildSSTable(drs []DataRecord, conf *config.Config, dict *compression.Dictionary, cbm *block_organization.CachedBlockManager, generation int, level int) *SSTable {
+func BuildSSTable(entries []adapter.MemtableEntry, conf *config.Config, dict *compression.Dictionary, cbm *block_organization.CachedBlockManager, generation int, level int) *SSTable {
 	conf1 := &config.Config{
 		Memtable: config.MemtableConfig{
 			NumberOfMemtables: 1,
-			NumberOfEntries:   len(drs),
+			NumberOfEntries:   len(entries),
 			Structure:         "skiplist",
 		},
 	}
 	memtable := memtable.NewMemtable(conf1)
-	return FlushSSTable(conf, *memtable, generation, dict, cbm)
+	for _, entry := range entries {
+		memtable.Update(entry.Key, entry.Value, entry.Timestamp, entry.Tombstone)
+	}
+	return FlushSSTable(conf, *memtable, level, generation, dict, cbm)
 }
 
 // Get traži ključ u SSTable-u i vraća odgovarajući DataRecord
