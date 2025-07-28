@@ -2,7 +2,8 @@ package compression
 
 import (
 	"encoding/binary"
-	"os"
+
+	"github.com/iigor000/database/structures/block_organization"
 )
 
 // Dictionary predstavlja strukturu koja mapira kljuceve na indekse
@@ -81,17 +82,10 @@ func Deserialize(data []byte) (*Dictionary, bool) {
 }
 
 // Citanje iz fajla
-func Read(path string) (*Dictionary, error) {
-	_, err := os.Stat(path)
-	if os.IsNotExist(err) {
-		return NewDictionary(), nil // Fajl ne postoji, vracamo prazan Dictionary
-	}
+func Read(path string, cbm *block_organization.CachedBlockManager) (*Dictionary, error) {
+	data, err := cbm.Read(path, 0)
 	if err != nil {
-		return nil, err // Drugi greska pri proveri fajla
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err // Greska pri citanju fajla
+		return nil, err
 	}
 	dict, pass := Deserialize(data)
 	if !pass {
@@ -101,16 +95,10 @@ func Read(path string) (*Dictionary, error) {
 }
 
 // Pisanje u fajl
-func (d *Dictionary) Write(path string) error {
-	f, err := os.Create(path)
-	if os.IsNotExist(err) {
-		return os.ErrNotExist // Fajl ne postoji
-	} else if err != nil {
-		return err // Druga greska pri otvaranju fajla
-	}
-	defer f.Close()
+func (d *Dictionary) Write(path string, cbm *block_organization.CachedBlockManager) error {
+
 	encoded := d.Serialize()
-	_, err = f.Write(encoded)
+	_, err := cbm.Append(path, encoded)
 	if err != nil {
 		return err // Greska pri pisanju u fajl
 	}

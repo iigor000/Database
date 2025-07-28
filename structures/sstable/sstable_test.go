@@ -164,7 +164,7 @@ func TestSSTableRead(t *testing.T) {
 		println("FirstKey:", string(record.FirstKey), "IndexOffset:", record.IndexOffset, "NumberOfRecords:", record.NumberOfRecords)
 	}
 
-	dict.Write("./sstable_test/dict_test.db")
+	dict.Write("./sstable_test/dict_test.db", cbm)
 
 }
 
@@ -192,15 +192,16 @@ func TestSSTableIterate(t *testing.T) {
 			Capacity: 100,
 		},
 	}
-	dict, err := compression.Read("./sstable_test/dict_test.db")
-	if err != nil {
-		t.Fatalf("Failed to read dictionary: %v", err)
-	}
+
 	bm := block_organization.NewBlockManager(conf)
 	bc := block_organization.NewBlockCache(conf)
 	cbm := &block_organization.CachedBlockManager{
 		BM: bm,
 		C:  bc,
+	}
+	dict, err := compression.Read("./sstable_test/dict_test.db", cbm)
+	if err != nil {
+		t.Fatalf("Failed to read dictionary: %v", err)
 	}
 	sstable, err := StartSSTable(1, 1, conf, dict, cbm)
 	if err != nil {
@@ -287,15 +288,15 @@ func TestSSTableScan(t *testing.T) {
 		},
 	}
 
-	dict, err := compression.Read("./sstable_test/dict_test.db")
-	if err != nil {
-		t.Fatalf("Failed to read dictionary: %v", err)
-	}
 	bm := block_organization.NewBlockManager(conf)
 	bc := block_organization.NewBlockCache(conf)
 	cbm := &block_organization.CachedBlockManager{
 		BM: bm,
 		C:  bc,
+	}
+	dict, err := compression.Read("./sstable_test/dict_test.db", cbm)
+	if err != nil {
+		t.Fatalf("Failed to read dictionary: %v", err)
 	}
 	sstable, err := StartSSTable(1, 1, conf, dict, cbm)
 	if err != nil {
@@ -347,16 +348,16 @@ func TestSSTableValidate(t *testing.T) {
 		},
 	}
 
-	dict, err := compression.Read("./sstable_test/dict_test.db")
-	dict.Print()
-	if err != nil {
-		t.Fatalf("Failed to read dictionary: %v", err)
-	}
 	bm := block_organization.NewBlockManager(conf)
 	bc := block_organization.NewBlockCache(conf)
 	cbm := &block_organization.CachedBlockManager{
 		BM: bm,
 		C:  bc,
+	}
+	dict, err := compression.Read("./sstable_test/dict_test.db", cbm)
+	dict.Print()
+	if err != nil {
+		t.Fatalf("Failed to read dictionary: %v", err)
 	}
 	sstable, err := StartSSTable(1, 1, conf, dict, cbm)
 	if err != nil {

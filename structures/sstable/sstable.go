@@ -345,75 +345,7 @@ func (sstable *SSTable) ReadFilterMetaCompression(path string, offsets map[strin
 	return nil
 }
 
-// WriteSSTable upisuje SSTable u fajl
-// Pomocna funkcija za LSM
-func WriteSSTable(sstable *SSTable, dir string, conf *config.Config, cbm *block_organization.CachedBlockManager) {
-	path := fmt.Sprintf("%s/%d", dir, sstable.Gen)
-	err := CreateDirectoryIfNotExists(path)
-	if err != nil {
-		panic("Error creating directory for SSTable: " + err.Error())
-	}
-
-	// Write Data
-	dataPath := CreateFileName(path, sstable.Gen, "Data", "db")
-	if conf.SSTable.UseCompression {
-		_, err = sstable.Data.WriteData(dataPath, conf, sstable.CompressionKey, cbm)
-		if err != nil {
-			panic("Error writing data to file: " + err.Error())
-		}
-	} else {
-		_, err = sstable.Data.WriteData(dataPath, conf, nil, cbm)
-		if err != nil {
-			panic("Error writing data to file: " + err.Error())
-		}
-	}
-
-	// Write Index
-	indexPath := CreateFileName(path, sstable.Gen, "Index", "db")
-	err = sstable.Index.WriteIndex(indexPath, conf, cbm)
-	if err != nil {
-		panic("Error writing index to file: " + err.Error())
-	}
-
-	// Write Summary
-	summaryPath := CreateFileName(path, sstable.Gen, "Summary", "db")
-	err = sstable.Summary.WriteSummary(summaryPath, conf, cbm)
-	if err != nil {
-		panic("Error writing summary to file: " + err.Error())
-	}
-
-	// Write Bloom Filter
-	filterPath := CreateFileName(path, sstable.Gen, "Filter", "db")
-	_, err = cbm.AppendBlock(filterPath, sstable.Filter.Serialize())
-	if err != nil {
-		panic("Error writing bloom filter to file: " + err.Error())
-	}
-
-	// Write Compression Dictionary
-	dictPath := CreateFileName(dir, sstable.Gen, "Dictionary", "db")
-	sstable.CompressionKey.Write(dictPath)
-
-	// Write Metadata
-	metadataPath := CreateFileName(path, sstable.Gen, "Metadata", "db")
-	_, err = sstable.Metadata.SerializeToBinaryFile(metadataPath, 0)
-	if err != nil {
-		panic("Error writing Merkle tree to file: " + err.Error())
-	}
-	// Write TOC file
-	tocPath := CreateFileName(path, sstable.Gen, "TOC", "txt")
-	tocData := fmt.Sprintf("Generation: %d\nData: %s\nIndex: %s\nSummary: %s\nFilter: %s\nMetadata: %s\n",
-		sstable.Gen, CreateFileName(path, sstable.Gen, "Data", "db"),
-		CreateFileName(path, sstable.Gen, "Index", "db"),
-		CreateFileName(path, sstable.Gen, "Summary", "db"),
-		CreateFileName(path, sstable.Gen, "Filter", "db"),
-		CreateFileName(path, sstable.Gen, "Metadata", "db"))
-	err = WriteTxtToFile(tocPath, tocData)
-	if err != nil {
-		panic("Error writing TOC to file: " + err.Error())
-	}
-}
-
-func NewEmptySSTable(conf *config.Config, level int, generation int) *SSTable {
+func NewEmptySSTable(conf *config.Config, level int, generation int, cbm *block_organization.CachedBlockManager) *SSTable {
 	sstable := &SSTable{
 		Data:           &Data{Records: []DataRecord{}},
 		Index:          &Index{Records: []IndexRecord{}},
@@ -424,7 +356,7 @@ func NewEmptySSTable(conf *config.Config, level int, generation int) *SSTable {
 		CompressionKey: nil,
 	}
 	if sstable.UseCompression {
-		dict, err := compression.Read(conf.Compression.DictionaryDir)
+		dict, err := compression.Read(conf.Compression.DictionaryDir, cbm)
 		if err != nil {
 			panic("Error reading compression dictionary: " + err.Error())
 		}

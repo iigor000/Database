@@ -63,7 +63,7 @@ func NewDatabase(config *config.Config, username string) (*Database, error) {
 	}
 	//?? TODO: Treba da se ucita BloomFilter i Summary iz SSTable-a
 	cache := cache.NewCache(config)
-	dict, err := compression.Read(config.Compression.DictionaryDir)
+	dict, err := compression.Read(config.Compression.DictionaryDir, cbm)
 	if err != nil {
 		return nil, err
 	}
