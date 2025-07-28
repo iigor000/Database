@@ -309,8 +309,10 @@ func (m *Memtables) GetMemtableToChange() int {
 		memtable := m.Memtables[i]
 
 		if memtable.Size < memtable.Capacity {
+			println("Memtable to change:", i)
 			return i
 		}
 	}
-	return -1
+
+	return m.NumberOfMemtables - 1 // Ako su svi puni, vracamo poslednji
 }
