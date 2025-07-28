@@ -3,9 +3,7 @@ package sstable
 import (
 	"bytes"
 	"fmt"
-	"os"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/iigor000/database/config"
@@ -318,29 +316,6 @@ func ReadMetadata(path string, conf *config.Config, bm *block_organization.Cache
 	return m, nil
 }
 
-// Ucitava offsete sa kraja fajla
-func ReadOffsetsFromFile(path string, conf *config.Config, bm *block_organization.CachedBlockManager) (map[string]int64, error) {
-	offsets := make(map[string]int64)
-	block, err := bm.ReadBlock(path, 0)
-	if err != nil {
-		return nil, fmt.Errorf("error reading offsets from file %s: %w", path, err)
-	}
-	lines := strings.Split(string(block), "\n")
-	for _, line := range lines {
-		parts := strings.Split(line, ": ")
-		if len(parts) == 2 {
-			val, err := strconv.ParseInt(parts[1], 10, 64)
-			if err == nil {
-				offsets[parts[0]] = val
-			}
-		}
-	}
-	if len(offsets) == 0 {
-		return nil, fmt.Errorf("no offsets found in file %s", path)
-	}
-	return offsets, nil
-}
-
 func (sstable *SSTable) ReadFilterMetaCompression(path string, offsets map[string]int64, readMerkle bool, conf *config.Config, bm *block_organization.CachedBlockManager) error {
 	//Citanje Compression info
 	block, err := bm.Read(path, int(offsets["Compression"]/int64(conf.Block.BlockSize)))
@@ -382,12 +357,12 @@ func WriteSSTable(sstable *SSTable, dir string, conf *config.Config, cbm *block_
 	// Write Data
 	dataPath := CreateFileName(path, sstable.Gen, "Data", "db")
 	if conf.SSTable.UseCompression {
-		_, err = sstable.Data.WriteData(dataPath, conf, sstable.CompressionKey, nil)
+		_, err = sstable.Data.WriteData(dataPath, conf, sstable.CompressionKey, cbm)
 		if err != nil {
 			panic("Error writing data to file: " + err.Error())
 		}
 	} else {
-		_, err = sstable.Data.WriteData(dataPath, conf, nil, nil)
+		_, err = sstable.Data.WriteData(dataPath, conf, nil, cbm)
 		if err != nil {
 			panic("Error writing data to file: " + err.Error())
 		}
@@ -438,8 +413,6 @@ func WriteSSTable(sstable *SSTable, dir string, conf *config.Config, cbm *block_
 	}
 }
 
-// NewEmptySSTable kreira prazan SSTable
-// Pomocna funkcija za LSM
 func NewEmptySSTable(conf *config.Config, level int, generation int) *SSTable {
 	sstable := &SSTable{
 		Data:           &Data{Records: []DataRecord{}},
@@ -448,10 +421,15 @@ func NewEmptySSTable(conf *config.Config, level int, generation int) *SSTable {
 		Gen:            generation,
 		Level:          level,
 		UseCompression: conf.SSTable.UseCompression,
-		CompressionKey: compression.NewDictionary(),
+		CompressionKey: nil,
 	}
 	if sstable.UseCompression {
-		sstable.CompressionKey = compression.NewDictionary()
+		dict, err := compression.Read(conf.Compression.DictionaryDir)
+		if err != nil {
+			panic("Error reading compression dictionary: " + err.Error())
+		}
+
+		sstable.CompressionKey = dict
 	}
 	return sstable
 }
@@ -660,34 +638,6 @@ func StartSSTable(level int, gen int, conf *config.Config, dict *compression.Dic
 		SingleFile:     conf.SSTable.SingleFile,
 	}
 	return sstable, nil
-}
-
-// DeleteFiles briše sve fajlove vezane za odgovarajući SSTable
-func (s *SSTable) DeleteFiles(conf *config.Config) error {
-	elements := []struct {
-		element string
-		ext     string
-	}{
-		{"Data", ".db"},
-		{"Index", ".db"},
-		{"Summary", ".db"},
-		{"Filter", ".db"},
-		{"Metadata", ".db"},
-		{"Dictionary", ".db"},
-		{"TOC", ".txt"},
-	}
-	path := fmt.Sprintf("%s/%d/%d", conf.SSTable.SstableDirectory, s.Level, s.Gen)
-
-	for _, element := range elements {
-		filePath := CreateFileName(path, s.Gen, element.element, element.ext)
-		if FileExists(filePath) {
-			if err := os.Remove(filePath); err != nil {
-				return fmt.Errorf("failed to remove file %s: %w", filePath, err)
-			}
-		}
-	}
-
-	return nil
 }
 
 // ValidateMerkleTree proverava da li je doslo do izmene u podacima

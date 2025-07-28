@@ -218,3 +218,39 @@ func (s *Summary) FindSummaryRecordWithKey(key string) (SummaryRecord, error) {
 	}
 	return s.Records[resultIdx], nil
 }
+
+// ReadSummaryMinMax čita prvi i poslednji ključ iz Summary fajla
+// Konstruiše putanju do Summary/SSTable fajla na osnovu konfiguracije i nivoa/generacije
+func ReadSummaryMinMax(level int, gen int, conf *config.Config, cbm *block_organization.CachedBlockManager) ([]byte, []byte, error) {
+	bm := block_organization.NewBlockManager(conf)
+	path := fmt.Sprintf("%s/%d/%d", conf.SSTable.SstableDirectory, level, gen)
+
+	var blockNum int
+
+	if conf.SSTable.SingleFile {
+		path = CreateFileName(path, gen, "SSTable", "db")
+		offsets, err := ReadOffsetsFromFile(path, conf, cbm)
+		if err != nil {
+			return nil, nil, fmt.Errorf("error reading offsets from file %s: %w", path, err)
+		}
+		blockNum = int(offsets["Summary"] / int64(conf.Block.BlockSize))
+	} else {
+		path = CreateFileName(path, gen, "Summary", "db")
+		blockNum = 0
+	}
+
+	data, err := bm.ReadBlock(path, blockNum)
+	if err != nil {
+		if err.Error() == "EOF" {
+			return nil, nil, fmt.Errorf("summary file is empty: %w", err)
+		}
+		return nil, nil, fmt.Errorf("error reading summary file: %w", err)
+	}
+
+	summary := &Summary{}
+	if err := summary.DeserializeHeader(data); err != nil {
+		return nil, nil, fmt.Errorf("failed to deserialize summary header: %w", err)
+	}
+
+	return summary.FirstKey, summary.LastKey, nil
+}
