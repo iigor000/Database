@@ -10,7 +10,15 @@ import (
 	"time"
 
 	"github.com/iigor000/database/config"
+	"github.com/iigor000/database/structures/block_organization"
 )
+
+func createTestCachedBlockManager(cfg *config.Config) *block_organization.CachedBlockManager {
+	return &block_organization.CachedBlockManager{
+		BM: block_organization.NewBlockManager(cfg),
+		C:  block_organization.NewBlockCache(cfg),
+	}
+}
 
 // testiramo dodavanje i citanje full zapisa
 func TestWAL_BasicAppendAndRead(t *testing.T) {
@@ -33,7 +41,8 @@ func TestWAL_BasicAppendAndRead(t *testing.T) {
 		},
 	}
 
-	wal, err := SetOffWAL(cfg)
+	cbm := createTestCachedBlockManager(cfg)
+	wal, err := SetOffWAL(cfg, cbm)
 	if err != nil {
 		t.Fatalf("Failed to initialize WAL: %v", err)
 	}
@@ -94,7 +103,8 @@ func TestWAL_TombstoneAppendAndRead(t *testing.T) {
 		},
 	}
 
-	wal, err := SetOffWAL(cfg)
+	cbm := createTestCachedBlockManager(cfg)
+	wal, err := SetOffWAL(cfg, cbm)
 	if err != nil {
 		t.Fatalf("Failed to initialize WAL: %v", err)
 	}
@@ -155,7 +165,8 @@ func TestWAL_EmptyValueAppendAndRead(t *testing.T) {
 		},
 	}
 
-	wal, err := SetOffWAL(cfg)
+	cbm := createTestCachedBlockManager(cfg)
+	wal, err := SetOffWAL(cfg, cbm)
 	if err != nil {
 		t.Fatalf("Failed to initialize WAL: %v", err)
 	}
@@ -217,9 +228,10 @@ func TestWAL_SegmentRotation(t *testing.T) {
 		},
 	}
 
-	wal, err := SetOffWAL(cfg)
+	cbm := createTestCachedBlockManager(cfg)
+	wal, err := SetOffWAL(cfg, cbm)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Failed to initialize WAL: %v", err)
 	}
 
 	// Upis dovoljno podataka da izazove rotaciju
@@ -258,9 +270,10 @@ func TestWAL_LargeRecord(t *testing.T) {
 		},
 	}
 
-	wal, err := SetOffWAL(cfg)
+	cbm := createTestCachedBlockManager(cfg)
+	wal, err := SetOffWAL(cfg, cbm)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Failed to initialize WAL: %v", err)
 	}
 
 	// Veliki zapis (veci od velicine bloka)
@@ -312,9 +325,10 @@ func TestWAL_RemoveSegments(t *testing.T) {
 		},
 	}
 
-	wal, err := SetOffWAL(cfg)
+	cbm := createTestCachedBlockManager(cfg)
+	wal, err := SetOffWAL(cfg, cbm)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Failed to initialize WAL: %v", err)
 	}
 
 	// Dodaj nekoliko zapisa da kreira vise segmenata
