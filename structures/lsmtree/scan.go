@@ -6,11 +6,12 @@ import (
 	"github.com/iigor000/database/config"
 	"github.com/iigor000/database/structures/adapter"
 	"github.com/iigor000/database/structures/block_organization"
+	"github.com/iigor000/database/structures/compression"
 )
 
 // PrefixScanPaged vrši pretragu svih nivoa LSM stabla po prefiksu, uz paginaciju.
-func PrefixScanPaged(conf *config.Config, prefix string, pageNumber int, pageSize int, cbm *block_organization.CachedBlockManager) ([]adapter.MemtableEntry, error) {
-	allResults, err := PrefixScan(conf, prefix, cbm)
+func PrefixScanPaged(conf *config.Config, prefix string, pageNumber int, pageSize int, cbm *block_organization.CachedBlockManager, dict *compression.Dictionary) ([]adapter.MemtableEntry, error) {
+	allResults, err := PrefixScan(conf, prefix, cbm, dict)
 	if err != nil {
 		return nil, err
 	}
@@ -41,8 +42,8 @@ func PrefixScanPaged(conf *config.Config, prefix string, pageNumber int, pageSiz
 }
 
 // RangeScanPaged vrši pretragu svih nivoa LSM stabla po opsegu ključeva, uz paginaciju.
-func RangeScanPaged(conf *config.Config, startKey, endKey string, pageNumber int, pageSize int, cbm *block_organization.CachedBlockManager) ([]adapter.MemtableEntry, error) {
-	allResults, err := RangeScan(conf, startKey, endKey, cbm)
+func RangeScanPaged(conf *config.Config, startKey, endKey string, pageNumber int, pageSize int, cbm *block_organization.CachedBlockManager, dict *compression.Dictionary) ([]adapter.MemtableEntry, error) {
+	allResults, err := RangeScan(conf, startKey, endKey, cbm, dict)
 	if err != nil {
 		return nil, err
 	}

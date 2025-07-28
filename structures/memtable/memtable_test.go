@@ -73,17 +73,17 @@ func TestMemtableCRUD(t *testing.T) {
 
 	fmt.Println("Deleting 4, 10, and 12 from Memtable:")
 	m.Delete([]byte("4"))
-	ent, found := m.Search([]byte("4"))
+	ent, _ := m.Search([]byte("4"))
 	if !ent.Tombstone {
 		t.Error("Expected not found for deleted key 4")
 	}
 	m.Delete([]byte("10"))
-	ent, found = m.Search([]byte("10"))
+	ent, _ = m.Search([]byte("10"))
 	if !ent.Tombstone {
 		t.Error("Expected not found for deleted key 10")
 	}
 	m.Delete([]byte("12"))
-	ent, found = m.Search([]byte("12"))
+	ent, _ = m.Search([]byte("12"))
 	if !ent.Tombstone {
 		t.Error("Expected not found for deleted key 12")
 	}
@@ -138,7 +138,7 @@ func TestMemtables(t *testing.T) {
 	}
 	fmt.Println("Deleting keys from Memtables:")
 	ms.Delete([]byte("7"))
-	ent, found := ms.Search([]byte("7"))
+	ent, _ := ms.Search([]byte("7"))
 	if !ent.Tombstone {
 		t.Error("Expected not found for deleted key 7")
 	}

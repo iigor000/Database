@@ -9,7 +9,7 @@ import (
 
 type SSTableIterator struct {
 	sstable         *SSTable
-	currentRecord   adapter.MemtableEntry
+	CurrentRecord   adapter.MemtableEntry
 	nextBlockNumber int
 	blockManager    *block_organization.CachedBlockManager
 }
@@ -19,17 +19,17 @@ func (sst *SSTable) NewSSTableIterator(bm *block_organization.CachedBlockManager
 	rec, nxtBlck := sst.Data.ReadRecord(bm, bn, sst.CompressionKey)
 	return &SSTableIterator{
 		sstable:         sst,
-		currentRecord:   rec,
+		CurrentRecord:   rec,
 		nextBlockNumber: nxtBlck,
 		blockManager:    bm,
 	}
 }
 
 func (si *SSTableIterator) Next() (adapter.MemtableEntry, bool) {
-	if si.currentRecord.Key == nil {
+	if si.CurrentRecord.Key == nil {
 		return adapter.MemtableEntry{}, false // Nema vise zapisa
 	}
-	rec := si.currentRecord
+	rec := si.CurrentRecord
 	if si.sstable.SingleFile {
 		if int(si.sstable.Data.DataFile.SizeOnDisk) < si.nextBlockNumber*si.blockManager.BM.BlockSize {
 
@@ -37,9 +37,9 @@ func (si *SSTableIterator) Next() (adapter.MemtableEntry, bool) {
 			return rec, true
 		}
 	}
-	si.currentRecord, si.nextBlockNumber = si.sstable.Data.ReadRecord(si.blockManager, si.nextBlockNumber, si.sstable.CompressionKey)
+	si.CurrentRecord, si.nextBlockNumber = si.sstable.Data.ReadRecord(si.blockManager, si.nextBlockNumber, si.sstable.CompressionKey)
 
-	if si.currentRecord.Key == nil {
+	if si.CurrentRecord.Key == nil {
 		si.Stop() // Zatvaranje iteratora ako nema vise zapisa
 	}
 
@@ -49,7 +49,7 @@ func (si *SSTableIterator) Next() (adapter.MemtableEntry, bool) {
 func (si *SSTableIterator) Stop() {
 	si.blockManager = nil
 	si.sstable = nil
-	si.currentRecord = adapter.MemtableEntry{}
+	si.CurrentRecord = adapter.MemtableEntry{}
 	si.nextBlockNumber = -1
 }
 
@@ -59,7 +59,7 @@ type PrefixIterator struct {
 }
 
 func (pi *PrefixIterator) HasNext() bool {
-	if pi.Iterator.currentRecord.Key == nil {
+	if pi.Iterator.CurrentRecord.Key == nil {
 		return false // Nema vise zapisa
 	}
 	if pi.Iterator.sstable.SingleFile {
@@ -88,10 +88,10 @@ func (sst *SSTable) PrefixIterate(prefix string, bm *block_organization.CachedBl
 	it.blockManager = bm
 	// Inicijalizujemo iterator sa prvim zapisom koji odgovara prefiksu
 	rec, nextBlock := sst.ReadRecordWithKey(bm, 0, prefix, false)
-	it.currentRecord = rec
+	it.CurrentRecord = rec
 	it.nextBlockNumber = nextBlock
 
-	if it.currentRecord.Key == nil {
+	if it.CurrentRecord.Key == nil {
 		it.Stop() // Ako nema zapisa sa tim prefiksom, zatvaramo iterator
 		return nil
 	}
@@ -101,10 +101,10 @@ func (sst *SSTable) PrefixIterate(prefix string, bm *block_organization.CachedBl
 	}
 }
 func (pi *PrefixIterator) Next() (adapter.MemtableEntry, bool) {
-	if pi.Iterator.currentRecord.Key == nil {
+	if pi.Iterator.CurrentRecord.Key == nil {
 		return adapter.MemtableEntry{}, false
 	}
-	record := pi.Iterator.currentRecord
+	record := pi.Iterator.CurrentRecord
 	if pi.Iterator.sstable.SingleFile {
 		if int(pi.Iterator.sstable.Data.DataFile.SizeOnDisk) < pi.Iterator.nextBlockNumber*pi.Iterator.blockManager.BM.BlockSize {
 			pi.Iterator.Stop()
@@ -116,7 +116,7 @@ func (pi *PrefixIterator) Next() (adapter.MemtableEntry, bool) {
 		pi.Iterator.Stop() // Zatvaramo iterator ako nema vise zapisa sa tim prefiksom
 		return record, true
 	}
-	pi.Iterator.currentRecord = rec
+	pi.Iterator.CurrentRecord = rec
 	pi.Iterator.nextBlockNumber = nextBlock
 
 	if nextBlock == -1 {
@@ -148,9 +148,9 @@ func (sst *SSTable) RangeIterate(startKey, endKey string, bm *block_organization
 	it.sstable = sst
 	it.blockManager = bm
 	rec, nextBlock := sst.ReadRecordWithKey(bm, 0, startKey, true)
-	it.currentRecord = rec
+	it.CurrentRecord = rec
 	it.nextBlockNumber = nextBlock
-	if it.currentRecord.Key == nil {
+	if it.CurrentRecord.Key == nil {
 		it.Stop() // Ako nema zapisa u tom opsegu, zatvaramo iterator
 		return nil
 	}
@@ -162,7 +162,7 @@ func (sst *SSTable) RangeIterate(startKey, endKey string, bm *block_organization
 }
 
 func (ri *RangeIterator) HasNext() bool {
-	if ri.Iterator.currentRecord.Key == nil {
+	if ri.Iterator.CurrentRecord.Key == nil {
 		return false // Nema vise zapisa
 	}
 	if ri.Iterator.sstable.SingleFile {
@@ -178,10 +178,10 @@ func (ri *RangeIterator) HasNext() bool {
 }
 
 func (ri *RangeIterator) Next() (adapter.MemtableEntry, bool) {
-	if ri.Iterator.currentRecord.Key == nil {
+	if ri.Iterator.CurrentRecord.Key == nil {
 		return adapter.MemtableEntry{}, false // Nema vise zapisa
 	}
-	record := ri.Iterator.currentRecord
+	record := ri.Iterator.CurrentRecord
 	if ri.Iterator.sstable.SingleFile {
 		if int(ri.Iterator.sstable.Data.DataFile.SizeOnDisk) < ri.Iterator.nextBlockNumber*ri.Iterator.blockManager.BM.BlockSize {
 			ri.Iterator.Stop()
@@ -189,7 +189,7 @@ func (ri *RangeIterator) Next() (adapter.MemtableEntry, bool) {
 		}
 	}
 	rec, nextBlock := ri.Iterator.sstable.Data.ReadRecord(ri.Iterator.blockManager, ri.Iterator.nextBlockNumber, ri.Iterator.sstable.CompressionKey)
-	ri.Iterator.currentRecord = rec
+	ri.Iterator.CurrentRecord = rec
 	ri.Iterator.nextBlockNumber = nextBlock
 
 	if nextBlock == -1 {

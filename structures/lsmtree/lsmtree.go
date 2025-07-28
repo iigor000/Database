@@ -29,7 +29,7 @@ func Get(conf *config.Config, key []byte, dict *compression.Dictionary, cbm *blo
 
 		for _, ref := range refs {
 			fmt.Print("Otvaram SSTable za nivo ", ref.Level, ", generacija ", ref.Gen, "...\n")
-			table, err := OpenSSTable(ref.Level, ref.Gen, conf, cbm)
+			table, err := sstable.StartSSTable(ref.Level, ref.Gen, conf, dict, cbm)
 			if err != nil {
 				return nil, fmt.Errorf("failed to open SSTable for level %d, gen %d: %w", ref.Level, ref.Gen, err)
 			}
@@ -263,15 +263,17 @@ func cleanupNames(conf *config.Config, level int) error {
 // Briše stare fajlove SSTable-ova koji su spojeni
 func mergeTables(conf *config.Config, newLevel int, cbm *block_organization.CachedBlockManager, dict *compression.Dictionary, sst1 *SSTableReference, ssts ...*SSTableReference) error {
 	allRefs := append([]*SSTableReference{sst1}, ssts...)
-	iterators := make([]GenericIterator, 0, len(allRefs))
+	tables := make([]*sstable.SSTable, 0, len(allRefs))
 
 	for _, ref := range allRefs {
-		iter, err := NewSSTableIterator(ref, conf, cbm)
+		table, err := sstable.StartSSTable(ref.Level, ref.Gen, conf, dict, cbm)
 		if err != nil {
-			return fmt.Errorf("failed to create iterator for SSTable %d: %w", ref.Gen, err)
+			return fmt.Errorf("failed to start SSTable for level %d, gen %d:%w", ref.Level, ref.Gen, err)
 		}
-		iterators = append(iterators, &SSTableIteratorAdapter{iter: iter})
+		tables = append(tables, table)
 	}
+
+	iter := NewLSMTreeIterator(tables, cbm)
 
 	// Kreiraj novi SSTable builder
 	nextGen := GetNextSSTableGeneration(conf, newLevel)
@@ -280,11 +282,25 @@ func mergeTables(conf *config.Config, newLevel int, cbm *block_organization.Cach
 		return fmt.Errorf("failed to create new SSTable builder: %w", err)
 	}
 
-	// K-way merge koristeći heap
-	mergedIter := NewMergedIterator(iterators...) // sortira po key, timestamp desc
+	fmt.Print("Spajam SSTable-ove na nivou ", newLevel, "...\n")
 
-	for mergedIter.HasNext() {
-		entry := mergedIter.Next()
+	for {
+		if iter == nil {
+			fmt.Print("Iter je nil...\n")
+			break // Nema više SSTable-ova za spajanje
+		}
+
+		entry := iter.Next()
+
+		if entry == nil {
+			break // Nema više zapisa za spajanje
+		}
+
+		if entry.Key == nil {
+			break // Nema više elemenata za iteraciju
+		}
+
+		fmt.Print("Zapis sa ključem ", string(entry.Key), " i vrednošću ", string(entry.Value), " je pronađen...\n")
 
 		if entry.Tombstone {
 			continue // preskoči obrisane
@@ -296,13 +312,12 @@ func mergeTables(conf *config.Config, newLevel int, cbm *block_organization.Cach
 		}
 	}
 
+	fmt.Print("Završavam spajanje SSTable-ova na nivou ", newLevel, "...\n")
+
 	err = builder.Finish(cbm, dict)
 	if err != nil {
 		return fmt.Errorf("failed to finish SSTable build: %w", err)
 	}
-
-	// Cleanup
-	mergedIter.Close()
 
 	// Obriši stare SSTable-ove (HANDLE: ovo može biti opasno zbog drugačijeg imenovanja)
 	if err := sst1.DeleteFiles(conf); err != nil {

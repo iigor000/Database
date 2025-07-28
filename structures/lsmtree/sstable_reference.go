@@ -8,8 +8,6 @@ import (
 	"strconv"
 
 	"github.com/iigor000/database/config"
-	"github.com/iigor000/database/structures/block_organization"
-	"github.com/iigor000/database/structures/compression"
 	"github.com/iigor000/database/structures/sstable"
 )
 
@@ -74,16 +72,6 @@ func sortReferencesByGen(refs []*SSTableReference, ascending ...bool) {
 	}
 }
 
-// OpenSSTable otvara SSTable na datom nivou i generaciji
-func OpenSSTable(level, gen int, conf *config.Config, cbm *block_organization.CachedBlockManager) (*sstable.SSTable, error) {
-	dict, err := compression.Read(conf.Compression.DictionaryDir, cbm)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read compression dictionary: %w", err)
-	}
-
-	return sstable.StartSSTable(level, gen, conf, dict, cbm)
-}
-
 // DeleteFiles briše sve fajlove vezane za odgovarajući SSTable
 func (s *SSTableReference) DeleteFiles(conf *config.Config) error {
 	sstableDir := fmt.Sprintf("%s/%d/%d", conf.SSTable.SstableDirectory, s.Level, s.Gen)
@@ -108,7 +96,7 @@ func Rename(conf *config.Config, level int, oldGen int, newGen int) error {
 		}
 		newPath := sstable.CreateFileName(oldDir, newGen, "SSTable", "db")
 
-		changeTOC(oldPath, oldGen, newGen)
+		changeTOC(oldDir, oldGen, newGen)
 
 		if err := os.Rename(oldPath, newPath); err != nil {
 			return fmt.Errorf("failed to rename SSTable file from %s to %s: %w", oldPath, newPath, err)
@@ -158,7 +146,7 @@ func Rename(conf *config.Config, level int, oldGen int, newGen int) error {
 			return fmt.Errorf("failed to rename Metadata file from %s to %s: %w", oldMetadataPath, newMetadataPath, err)
 		}
 
-		changeTOC(oldTOCPath, oldGen, newGen)
+		changeTOC(oldDir, oldGen, newGen)
 
 		newTOCPath := sstable.CreateFileName(oldDir, newGen, "TOC", "txt")
 		if err := os.Rename(oldTOCPath, newTOCPath); err != nil {
@@ -175,6 +163,17 @@ func Rename(conf *config.Config, level int, oldGen int, newGen int) error {
 	return nil
 }
 
-func changeTOC(oldFile string, oldGen, newGen int) {
-	// TODO
+func changeTOC(path string, oldGen, newGen int) {
+	toc_data := fmt.Sprintf("Generation: %d\nData: %s\nIndex: %s\nSummary: %s\nFilter: %s\nMetadata: %s\nCompression: %s\n",
+		newGen, sstable.CreateFileName(path, newGen, "Data", "db"),
+		sstable.CreateFileName(path, newGen, "Index", "db"),
+		sstable.CreateFileName(path, newGen, "Summary", "db"),
+		sstable.CreateFileName(path, newGen, "Filter", "db"),
+		sstable.CreateFileName(path, newGen, "Metadata", "db"),
+		sstable.CreateFileName(path, newGen, "CompressionInfo", "db"))
+	sstable.WriteTxtToFile(sstable.CreateFileName(path, newGen, "TOC", "txt"), toc_data)
+
+	if err := os.Remove(sstable.CreateFileName(path, oldGen, "TOC", "txt")); err != nil {
+		fmt.Printf("Failed to remove old TOC file for generation %d: %v\n", oldGen, err)
+	}
 }

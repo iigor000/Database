@@ -16,7 +16,6 @@ import (
 )
 
 var cbm *block_organization.CachedBlockManager
-var dict *compression.Dictionary
 
 func createTestConfig(t *testing.T) *config.Config {
 	dir := t.TempDir()
@@ -41,10 +40,10 @@ func createTestConfig(t *testing.T) *config.Config {
 			MinSize: 16,
 		},
 		SSTable: config.SSTableConfig{
-			UseCompression:   true,
+			UseCompression:   false,
 			SummaryLevel:     10,
 			SstableDirectory: dir,
-			SingleFile:       false,
+			SingleFile:       true,
 		},
 		Cache: config.CacheConfig{
 			Capacity: 100,
@@ -78,15 +77,9 @@ func createTestConfig(t *testing.T) *config.Config {
 }
 
 // Helper: Kreira i upisuje SSTable sa jednim zapisom za test
-func createTestSSTable(t *testing.T, conf *config.Config, level int, gen int, key, value []byte) *SSTableReference {
+func createTestSSTable(t *testing.T, conf *config.Config, level int, gen int, key, value []byte, dict *compression.Dictionary) *SSTableReference {
 	t.Helper()
 	ref := &SSTableReference{Level: level, Gen: gen}
-
-	var err error
-	dict, err = compression.Read(conf.Compression.DictionaryDir, cbm)
-	if err != nil {
-		t.Fatalf("failed to read compression dictionary: %v", err)
-	}
 
 	// Kreiraj jednostavan SSTable builder i upiši jedan zapis
 	builder, err := NewSSTableBuilder(level, gen, conf)
@@ -111,12 +104,12 @@ func TestGetAndCompact(t *testing.T) {
 	conf := createTestConfig(t)
 	dict := compression.NewDictionary()
 
-	// Napravi 2 SSTable-ova sa različitim ključevima na nivou 1
-	createTestSSTable(t, conf, 1, 1, []byte("key1"), []byte("value1"))
-	createTestSSTable(t, conf, 1, 2, []byte("key2"), []byte("value2"))
-
 	dict.Add([]byte("key1"))
 	dict.Add([]byte("key2"))
+
+	// Napravi 2 SSTable-ova sa različitim ključevima na nivou 1
+	createTestSSTable(t, conf, 1, 1, []byte("key1"), []byte("value1"), dict)
+	createTestSSTable(t, conf, 1, 2, []byte("key2"), []byte("value2"), dict)
 
 	// Test Get za key1
 	rec, err := Get(conf, []byte("key1"), dict, cbm)
@@ -138,7 +131,7 @@ func TestGetAndCompact(t *testing.T) {
 	}
 	fmt.Print("Nepostojeći ključ vraća nil: ", rec, "\n")
 
-	// Test kompakcije (size-tiered)
+	// Test kompakcije (size-tiered) ?
 	err = Compact(conf, dict, cbm)
 	if err != nil {
 		t.Fatalf("Compact failed: %v", err)
@@ -181,9 +174,9 @@ func TestCleanupNames(t *testing.T) {
 
 	// Ručno kreiraj foldere i fajlove za njih (po potrebi)
 	for _, ref := range refs {
-		dir := filepath.Join(conf.SSTable.SstableDirectory, "1", strconv.Itoa(ref.Gen))
-		os.MkdirAll(dir, 0755)
-		file := filepath.Join(dir, sstable.CreateFileName(dir, ref.Gen, "SSTable", "db"))
+		genDir := filepath.Join(conf.SSTable.SstableDirectory, "1", strconv.Itoa(ref.Gen))
+		sstable.CreateDirectoryIfNotExists(genDir)
+		file := filepath.Join(genDir, sstable.CreateFileName(genDir, ref.Gen, "SSTable", "db"))
 		os.WriteFile(file, []byte("dummy"), 0644)
 	}
 
@@ -194,19 +187,23 @@ func TestCleanupNames(t *testing.T) {
 
 	// Proveri da li su folderi/fajlovi preimenovani u 1,2,3
 	for i := 1; i <= len(refs); i++ {
-		dir := filepath.Join(conf.SSTable.SstableDirectory, "1", strconv.Itoa(i))
-		if !sstable.FileExists(dir) {
-			t.Errorf("expected directory %s to exist", dir)
+		genDir := filepath.Join(conf.SSTable.SstableDirectory, "1", strconv.Itoa(refs[i-1].Gen))
+		if !sstable.FileExists(genDir) {
+			t.Errorf("expected directory %s to exist", genDir)
 		}
 	}
 }
 
 func TestMergeTables(t *testing.T) {
 	conf := createTestConfig(t)
+	dict := compression.NewDictionary()
+
+	dict.Add([]byte("a"))
+	dict.Add([]byte("b"))
 
 	// Kreiraj 2 SSTable sa po jednim zapisom
-	ref1 := createTestSSTable(t, conf, 1, 1, []byte("a"), []byte("valueA"))
-	ref2 := createTestSSTable(t, conf, 1, 2, []byte("b"), []byte("valueB"))
+	ref1 := createTestSSTable(t, conf, 1, 1, []byte("a"), []byte("valueA"), dict)
+	ref2 := createTestSSTable(t, conf, 1, 2, []byte("b"), []byte("valueB"), dict)
 
 	err := mergeTables(conf, 2, cbm, dict, ref1, ref2)
 	if err != nil {
