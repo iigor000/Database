@@ -119,7 +119,7 @@ func (db *Database) put(key string, value []byte) error {
 		// Flush Memtable na disk
 		println("Flushing Memtable to disk...")
 		println("Gen to Flush:", db.memtables.GenToFlush)
-		sstable.FlushSSTable(db.config, *db.memtables.Memtables[0], db.memtables.GenToFlush, db.compression, db.CacheBlockManager)
+		sstable.FlushSSTable(db.config, *db.memtables.Memtables[0], 1, db.memtables.GenToFlush, db.compression, db.CacheBlockManager)
 
 		db.lastFlushedGen = db.memtables.GenToFlush // azuriramo poslednju flushovanu generaciju
 		if err := db.wal.RemoveSegmentsUpTo(db.calculateLWM()); err != nil {
@@ -127,7 +127,7 @@ func (db *Database) put(key string, value []byte) error {
 		}
 
 		// Proverava uslov za kompakciju i vrši kompakciju ako je potrebno (počinje proveru od prvog nivoa)
-		// lsmtree.Compact(db.config, db.compression, db.CacheBlockManager)
+		lsmtree.Compact(db.config, db.compression, db.CacheBlockManager)
 
 		recordsToCache := db.memtables.Memtables[0].GetAllEntries()
 

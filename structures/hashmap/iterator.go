@@ -82,8 +82,11 @@ func (h *Iterator) Next() (adapter.MemtableEntry, bool) {
 }
 
 func (h *Iterator) Stop() {
-	h.index = h.maxIndex              // Postavljamo index na maxIndex da bi se iterator zaustavio
-	h.value = adapter.MemtableEntry{} // Resetujemo vrednost
+	h.index = 0
+	h.maxIndex = 0
+	h.value = adapter.MemtableEntry{}
+	h.keys = nil
+	h.hashMap = nil
 }
 
 // Inicijalizuje iterator koji vraca samo zapise u datom opsegu

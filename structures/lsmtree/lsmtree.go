@@ -28,11 +28,13 @@ func Get(conf *config.Config, key []byte, dict *compression.Dictionary, cbm *blo
 		var record *sstable.DataRecord = nil
 
 		for _, ref := range refs {
+			fmt.Print("Otvaram SSTable za nivo ", ref.Level, ", generacija ", ref.Gen, "...\n")
 			table, err := OpenSSTable(ref.Level, ref.Gen, conf, cbm)
 			if err != nil {
 				return nil, fmt.Errorf("failed to open SSTable for level %d, gen %d: %w", ref.Level, ref.Gen, err)
 			}
 
+			fmt.Print("Tražim ključ ", string(key), " u SSTable...\n")
 			rec, _ := table.Get(conf, key, cbm)
 
 			if record == nil {
@@ -119,7 +121,7 @@ func sizeTieredCompaction(conf *config.Config, dict *compression.Dictionary, cbm
 		for len(refs) >= maxSSTablesPerLevel {
 			// Spaja prve dve tabele i kreira novu SSTable na sledećem nivou
 			// briše stare SSTable-ove
-			err = mergeTables(conf, level+1, cbm, refs[0], refs[1])
+			err = mergeTables(conf, level+1, cbm, dict, refs[0], refs[1])
 			if err != nil {
 				return fmt.Errorf("error merging tables for level %d: %w", level, err)
 			}
@@ -222,7 +224,7 @@ func leveledCompaction(conf *config.Config, level int, dict *compression.Diction
 		}
 		// Spaja prvi SSTable sa svim preklapajućim SSTable-ovima
 		// briše stare SSTable-ove
-		err = mergeTables(conf, level+1, cbm, refs[0], overlapping...)
+		err = mergeTables(conf, level+1, cbm, dict, refs[0], overlapping...)
 		if err != nil {
 			return fmt.Errorf("error merging tables for level %d: %w", level, err)
 		}
@@ -259,7 +261,7 @@ func cleanupNames(conf *config.Config, level int) error {
 
 // mergeTables spaja dva ili više SSTable-ova u jedan novi SSTable i upisuje ga na newLevel
 // Briše stare fajlove SSTable-ova koji su spojeni
-func mergeTables(conf *config.Config, newLevel int, cbm *block_organization.CachedBlockManager, sst1 *SSTableReference, ssts ...*SSTableReference) error {
+func mergeTables(conf *config.Config, newLevel int, cbm *block_organization.CachedBlockManager, dict *compression.Dictionary, sst1 *SSTableReference, ssts ...*SSTableReference) error {
 	allRefs := append([]*SSTableReference{sst1}, ssts...)
 	iterators := make([]GenericIterator, 0, len(allRefs))
 
@@ -288,13 +290,13 @@ func mergeTables(conf *config.Config, newLevel int, cbm *block_organization.Cach
 			continue // preskoči obrisane
 		}
 
-		err := builder.Write(entry)
+		err := builder.Write(*entry)
 		if err != nil {
 			return fmt.Errorf("failed to write entry: %w", err)
 		}
 	}
 
-	err = builder.Finish(cbm)
+	err = builder.Finish(cbm, dict)
 	if err != nil {
 		return fmt.Errorf("failed to finish SSTable build: %w", err)
 	}

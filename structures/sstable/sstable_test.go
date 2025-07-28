@@ -63,7 +63,7 @@ func TestSSTable(t *testing.T) {
 		C:  bc,
 	}
 	// Flush the memtable to create an SSTable
-	sstable := FlushSSTable(conf, *memtable, 1, dict, cbm)
+	sstable := FlushSSTable(conf, *memtable, 1, 1, dict, cbm)
 	// Check if the SSTable has the expected number of records
 	if len(sstable.Data.Records) != 5 {
 		t.Errorf("Expected 5 records in SSTable, got %d", len(sstable.Data.Records))
@@ -114,7 +114,7 @@ func TestSSTableRead(t *testing.T) {
 		BM: bm,
 		C:  bc,
 	}
-	sstable := FlushSSTable(conf, *memtable, 1, dict, cbm)
+	sstable := FlushSSTable(conf, *memtable, 1, 1, dict, cbm)
 	if sstable == nil {
 		t.Fatal("Failed to create SSTable")
 	}
