@@ -65,7 +65,7 @@ func NewDatabase(config *config.Config, username string) (*Database, error) {
 	cache := cache.NewCache(config)
 	dict, err := compression.Read(config.Compression.DictionaryDir, cbm)
 	if err != nil {
-		return nil, err
+		dict = compression.NewDictionary() // Ako nije uspelo da se ucita, kreiramo novi
 	}
 
 	return &Database{
