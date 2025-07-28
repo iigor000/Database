@@ -7,6 +7,7 @@ import (
 
 	"github.com/iigor000/database/config"
 	// "github.com/iigor000/database/structures/adapter"
+	"github.com/iigor000/database/structures/block_organization"
 	"github.com/iigor000/database/structures/cache"
 	"github.com/iigor000/database/structures/compression"
 	writeaheadlog "github.com/iigor000/database/structures/writeAheadLog"
@@ -27,10 +28,19 @@ type Database struct {
 	cache          *cache.Cache
 	username       string
 	lastFlushedGen int // poslednja generacija koja je flush-ovana na disk
+	cmb            *block_organization.CachedBlockManager
 }
 
 func NewDatabase(config *config.Config, username string) (*Database, error) {
-	wal, err := writeaheadlog.SetOffWAL(config)
+	// Prvo kreiramo CachedBlockManager
+	bm := block_organization.NewBlockManager(config)
+	bc := block_organization.NewBlockCache(config)
+	cbm := &block_organization.CachedBlockManager{
+		BM: bm,
+		C:  bc,
+	}
+
+	wal, err := writeaheadlog.SetOffWAL(config, cbm)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize write-ahead log: %w", err)
 	}
@@ -63,6 +73,7 @@ func NewDatabase(config *config.Config, username string) (*Database, error) {
 		cache:       cache,
 		username:    username,
 		compression: dict,
+		cmb:         cbm,
 	}, nil
 }
 
