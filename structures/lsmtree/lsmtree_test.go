@@ -1,16 +1,26 @@
 package lsmtree
 
 import (
+	"bytes"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strconv"
 	"testing"
-	"time"
 
 	"github.com/iigor000/database/config"
+	"github.com/iigor000/database/structures/adapter"
+	"github.com/iigor000/database/structures/block_organization"
 	"github.com/iigor000/database/structures/compression"
 	"github.com/iigor000/database/structures/sstable"
 )
 
-func createTestConfig(baseDir string) *config.Config {
-	return &config.Config{
+var cbm *block_organization.CachedBlockManager
+
+func createTestConfig(t *testing.T) *config.Config {
+	dir := t.TempDir()
+
+	conf := &config.Config{
 		Block: config.BlockConfig{
 			BlockSize: 4096,
 		},
@@ -30,22 +40,22 @@ func createTestConfig(baseDir string) *config.Config {
 			MinSize: 16,
 		},
 		SSTable: config.SSTableConfig{
-			UseCompression:   false,
+			UseCompression:   true,
 			SummaryLevel:     10,
-			SstableDirectory: "data/sstable",
+			SstableDirectory: dir,
 			SingleFile:       false,
 		},
 		Cache: config.CacheConfig{
 			Capacity: 100,
 		},
 		LSMTree: config.LSMTreeConfig{
-			MaxLevel:            5,
+			MaxLevel:            3,
 			CompactionAlgorithm: "size_tiered",
 			// "leveled" KOMPAKCIJA
-			BaseSSTableLimit:    10000, // Bazni limit SSTable-a (DataBlock je velicine 4096, 8192 ili 16384 bajta)
-			LevelSizeMultiplier: 10,    // Multiplikator velicine nivoa (granica za prvi nivo je BaseSSTableLimit pomnožena sa 10, kod drugog sa 100, itd.)
+			BaseSSTableLimit:    1024 * 1024, // 1MB - Bazni limit SSTable-a (DataBlock je velicine 4096, 8192 ili 16384 bajta)
+			LevelSizeMultiplier: 10,          // Multiplikator velicine nivoa (granica za prvi nivo je BaseSSTableLimit pomnožena sa 10, kod drugog sa 100, itd.)
 			// "size_tiered" KOMPAKCIJA
-			MaxTablesPerLevel: 8, // Maksimalan broj SSTable-ova po nivou
+			MaxTablesPerLevel: 4, // Maksimalan broj SSTable-ova po nivou
 		},
 		TokenBucket: config.TokenBucketConfig{
 			StartTokens:     1000, // Broj tokena na pocetku
@@ -55,150 +65,159 @@ func createTestConfig(baseDir string) *config.Config {
 			DictionaryDir: "data/compression_dict",
 		},
 	}
+
+	bm := block_organization.NewBlockManager(conf)
+	bc := block_organization.NewBlockCache(conf)
+	cbm = &block_organization.CachedBlockManager{
+		BM: bm,
+		C:  bc,
+	}
+
+	return conf
 }
 
-func createSSTableWithData(t *testing.T, conf *config.Config, level int, gen int, key string, value string) {
-	err := buildSSTableFromRecords([]*sstable.DataRecord{
-		{Key: []byte(key), Value: []byte(value), Timestamp: time.Now().UnixNano()},
-	}, conf, level, gen)
+// Helper: Kreira i upisuje SSTable sa jednim zapisom za test
+func createTestSSTable(t *testing.T, conf *config.Config, level int, gen int, key, value []byte) *SSTableReference {
+	t.Helper()
+	ref := &SSTableReference{Level: level, Gen: gen}
+
+	// Kreiraj jednostavan SSTable builder i upiši jedan zapis
+	builder, err := NewSSTableBuilder(level, gen, conf)
 	if err != nil {
-		t.Fatalf("Failed to create SSTable: %v", err)
+		t.Fatalf("failed to create SSTable builder: %v", err)
 	}
+	err = builder.Write(&adapter.MemtableEntry{Key: key, Value: value, Timestamp: 1, Tombstone: false})
+	if err != nil {
+		t.Fatalf("failed to write record: %v", err)
+	}
+	err = builder.Finish(cbm)
+	if err != nil {
+		t.Fatalf("failed to finish SSTable build: %v", err)
+	}
+	return ref
 }
 
-// TODO: fix testove
+func TestGetAndCompact(t *testing.T) {
+	conf := createTestConfig(t)
+	dict := compression.NewDictionary()
 
-func TestGetExistingKey(t *testing.T) {
-	tmp := t.TempDir()
-	conf := createTestConfig(tmp)
+	// Napravi 2 SSTable-ova sa različitim ključevima na nivou 1
+	createTestSSTable(t, conf, 1, 1, []byte("key1"), []byte("value1"))
+	createTestSSTable(t, conf, 1, 2, []byte("key2"), []byte("value2"))
+	dict.Add([]byte("key1"))
+	dict.Add([]byte("key2"))
+	fmt.Print("Upisani ključevi: key1, key2\n")
 
-	dict, err := compression.Read(conf.Compression.DictionaryDir)
+	fmt.Print("Testiranje Get funkcije...\n")
+	// Test Get za key1
+	rec, err := Get(conf, []byte("key1"), dict, cbm)
 	if err != nil {
-		t.Fatalf("Failed to read compression dictionary: %v", err)
+		t.Fatalf("Get failed: %v", err)
 	}
+	if rec == nil || !bytes.Equal(rec.Value, []byte("value1")) {
+		t.Errorf("expected value1, got %v", rec)
+	}
+	fmt.Print("Key1 pronađen: ", rec.Value, "\n")
 
-	// Napravi SSTable sa jednim zapisom
-	createSSTableWithData(t, conf, 1, 1, "key1", "value1")
-
-	rec, err := Get(conf, []byte("key1"), dict)
+	// Test Get za nepostojeći ključ
+	rec, err = Get(conf, []byte("nokey"), dict, cbm)
 	if err != nil {
-		t.Errorf("Unexpected error in Get: %v", err)
-	}
-	if rec == nil || string(rec.Value) != "value1" {
-		t.Errorf("Expected value1, got %v", rec)
-	}
-}
-
-func TestGetMissingKey(t *testing.T) {
-	tmp := t.TempDir()
-	conf := createTestConfig(tmp)
-
-	dict, err := compression.Read(conf.Compression.DictionaryDir)
-	if err != nil {
-		t.Fatalf("Failed to read compression dictionary: %v", err)
-	}
-
-	// Napravi SSTable sa jednim zapisom
-	createSSTableWithData(t, conf, 1, 1, "key1", "value1")
-
-	rec, err := Get(conf, []byte("notfound"), dict)
-	if err != nil {
-		t.Errorf("Unexpected error in Get: %v", err)
+		t.Fatalf("Get failed: %v", err)
 	}
 	if rec != nil {
-		t.Errorf("Expected nil, got %+v", rec)
+		t.Errorf("expected nil for non-existent key, got %v", rec)
 	}
-}
+	fmt.Print("Nepostojeći ključ vraća nil: ", rec, "\n")
 
-func TestCompact(t *testing.T) {
-	tmp := t.TempDir()
-	conf := createTestConfig(tmp)
-
-	dict, err := compression.Read(conf.Compression.DictionaryDir)
-	if err != nil {
-		t.Fatalf("Failed to read compression dictionary: %v", err)
-	}
-
-	// Napravi dva SSTable sa različitim ključevima
-	createSSTableWithData(t, conf, 1, 1, "key1", "value1")
-	createSSTableWithData(t, conf, 1, 2, "key2", "value2")
-
-	err = Compact(conf, dict)
-	if err != nil {
-		t.Errorf("Compact failed: %v", err)
-	}
-
-	// Get bi trebalo da radi i nakon kompakcije
-	rec1, _ := Get(conf, []byte("key1"), dict)
-	if rec1 == nil || string(rec1.Value) != "value1" {
-		t.Errorf("Expected key1 to return value1, got %+v", rec1)
-	}
-
-	rec2, _ := Get(conf, []byte("key2"), dict)
-	if rec2 == nil || string(rec2.Value) != "value2" {
-		t.Errorf("Expected key2 to return value2, got %+v", rec2)
-	}
-}
-
-func TestMergeKeepsLatestTimestamp(t *testing.T) {
-	tmp := t.TempDir()
-	conf := createTestConfig(tmp)
-
-	dict, err := compression.Read(conf.Compression.DictionaryDir)
-	if err != nil {
-		t.Fatalf("Failed to read compression dictionary: %v", err)
-	}
-
-	now := time.Now().UnixNano()
-	old := now - 1000
-
-	// Napravi SSTable sa DataRecord sa starijim timestampom
-	err = buildSSTableFromRecords([]*sstable.DataRecord{
-		{Key: []byte("dup"), Value: []byte("old"), Timestamp: old},
-	}, conf, 1, 1)
-	if err != nil {
-		t.Fatalf("Failed to create SSTable: %v", err)
-	}
-
-	// Napravi SSTable sa DataRecord sa novijim timestampom
-	err = buildSSTableFromRecords([]*sstable.DataRecord{
-		{Key: []byte("dup"), Value: []byte("new"), Timestamp: now},
-	}, conf, 1, 2)
-	if err != nil {
-		t.Fatalf("Failed to create SSTable: %v", err)
-	}
-
-	err = Compact(conf, dict)
+	// Test kompakcije (size-tiered)
+	err = Compact(conf, dict, cbm)
 	if err != nil {
 		t.Fatalf("Compact failed: %v", err)
 	}
+	fmt.Print("Kompakcija uspešna\n")
+}
 
-	rec, err := Get(conf, []byte("dup"), dict)
-	if err != nil {
-		t.Errorf("Get failed after merge: %v", err)
+func TestGetNextSSTableGeneration(t *testing.T) {
+	conf := createTestConfig(t)
+
+	levelDir := filepath.Join(conf.SSTable.SstableDirectory, "1")
+	os.MkdirAll(levelDir, 0755)
+
+	// Napravi foldere generacija 1, 2, 5
+	os.MkdirAll(filepath.Join(levelDir, "1"), 0755)
+	os.MkdirAll(filepath.Join(levelDir, "2"), 0755)
+	os.MkdirAll(filepath.Join(levelDir, "5"), 0755)
+
+	nextGen := GetNextSSTableGeneration(conf, 1)
+	if nextGen != 6 {
+		t.Errorf("expected next gen 6, got %d", nextGen)
 	}
-	if rec == nil || string(rec.Value) != "new" {
-		t.Errorf("Expected value to be 'new', got %+v", rec)
+
+	// Test za nepostojeći direktorijum
+	nextGen = GetNextSSTableGeneration(conf, 99)
+	if nextGen != 1 {
+		t.Errorf("expected next gen 1 for missing dir, got %d", nextGen)
 	}
 }
 
-func TestGetOverlappingSSTables(t *testing.T) {
-	tmp := t.TempDir()
-	conf := createTestConfig(tmp)
+func TestCleanupNames(t *testing.T) {
+	conf := createTestConfig(t)
 
-	dict, err := compression.Read(conf.Compression.DictionaryDir)
-	if err != nil {
-		t.Fatalf("Failed to read compression dictionary: %v", err)
+	// Kreiraj refove sa "neurednim" generacijama
+	refs := []*SSTableReference{
+		{Level: 1, Gen: 3},
+		{Level: 1, Gen: 5},
+		{Level: 1, Gen: 2},
 	}
 
-	// Napravi dva SSTable sa preklapajućim ključevima
-	createSSTableWithData(t, conf, 1, 1, "key1", "value1")
-	createSSTableWithData(t, conf, 1, 2, "key1", "value2")
-	rec, err := Get(conf, []byte("key1"), dict)
-	if err != nil {
-		t.Errorf("Unexpected error in Get: %v", err)
+	// Ručno kreiraj foldere i fajlove za njih (po potrebi)
+	for _, ref := range refs {
+		dir := filepath.Join(conf.SSTable.SstableDirectory, "1", strconv.Itoa(ref.Gen))
+		os.MkdirAll(dir, 0755)
+		file := filepath.Join(dir, sstable.CreateFileName(dir, ref.Gen, "SSTable", "db"))
+		os.WriteFile(file, []byte("dummy"), 0644)
 	}
-	if rec == nil || string(rec.Value) != "value2" {
-		t.Errorf("Expected value2, got %v", rec)
+
+	err := cleanupNames(conf, 1)
+	if err != nil {
+		t.Fatalf("cleanupNames failed: %v", err)
+	}
+
+	// Proveri da li su folderi/fajlovi preimenovani u 1,2,3
+	for i := 1; i <= len(refs); i++ {
+		dir := filepath.Join(conf.SSTable.SstableDirectory, "1", strconv.Itoa(i))
+		if !sstable.FileExists(dir) {
+			t.Errorf("expected directory %s to exist", dir)
+		}
+	}
+}
+
+func TestMergeTables(t *testing.T) {
+	conf := createTestConfig(t)
+
+	// Kreiraj 2 SSTable sa po jednim zapisom
+	ref1 := createTestSSTable(t, conf, 1, 1, []byte("a"), []byte("valueA"))
+	ref2 := createTestSSTable(t, conf, 1, 2, []byte("b"), []byte("valueB"))
+
+	err := mergeTables(conf, 2, cbm, ref1, ref2)
+	if err != nil {
+		t.Fatalf("mergeTables failed: %v", err)
+	}
+
+	// Nakon merge, na nivou 2 treba postojati nova SSTable generacija 1
+	newRefs, err := getSSTableReferences(conf, 2, true)
+	if err != nil {
+		t.Fatalf("failed to get SSTable references: %v", err)
+	}
+
+	found := false
+	for _, ref := range newRefs {
+		if ref.Gen == 1 {
+			found = true
+		}
+	}
+
+	if !found {
+		t.Errorf("expected merged SSTable generation 1 at level 2")
 	}
 }

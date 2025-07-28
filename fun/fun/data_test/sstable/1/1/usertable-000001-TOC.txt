@@ -1,0 +1,7 @@
+Generation: 1
+Data: fun\data_test\sstable/1/1/usertable-000001-Data.db
+Index: fun\data_test\sstable/1/1/usertable-000001-Index.db
+Summary: fun\data_test\sstable/1/1/usertable-000001-Summary.db
+Filter: fun\data_test\sstable/1/1/usertable-000001-Filter.db
+Metadata: fun\data_test\sstable/1/1/usertable-000001-Metadata.db
+Compression: fun\data_test\sstable/1/1/usertable-000001-CompressionInfo.db

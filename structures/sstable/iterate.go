@@ -58,6 +58,22 @@ type PrefixIterator struct {
 	Prefix   string
 }
 
+func (pi *PrefixIterator) HasNext() bool {
+	if pi.Iterator.currentRecord.Key == nil {
+		return false // Nema vise zapisa
+	}
+	if pi.Iterator.sstable.SingleFile {
+		if int(pi.Iterator.sstable.Data.DataFile.SizeOnDisk) < pi.Iterator.nextBlockNumber*pi.Iterator.blockManager.BM.BlockSize {
+			return false
+		}
+	}
+	rec, _ := pi.Iterator.sstable.Data.ReadRecord(pi.Iterator.blockManager, pi.Iterator.nextBlockNumber, pi.Iterator.sstable.CompressionKey)
+	if rec.Key == nil {
+		return false // Nema vise zapisa
+	}
+	return bytes.HasPrefix(rec.Key, []byte(pi.Prefix))
+}
+
 // Inicijalizuje iterator koji vraca samo zapise sa datim prefiksom
 func (sst *SSTable) PrefixIterate(prefix string, bm *block_organization.CachedBlockManager) *PrefixIterator {
 	if len(prefix) == 0 {
@@ -111,6 +127,12 @@ func (pi *PrefixIterator) Next() (adapter.MemtableEntry, bool) {
 	return record, true
 }
 
+func (pi *PrefixIterator) Close() {
+	pi.Iterator.Stop()
+	pi.Iterator = nil
+	pi.Prefix = ""
+}
+
 type RangeIterator struct {
 	Iterator *SSTableIterator
 	StartKey string
@@ -139,6 +161,22 @@ func (sst *SSTable) RangeIterate(startKey, endKey string, bm *block_organization
 	}
 }
 
+func (ri *RangeIterator) HasNext() bool {
+	if ri.Iterator.currentRecord.Key == nil {
+		return false // Nema vise zapisa
+	}
+	if ri.Iterator.sstable.SingleFile {
+		if int(ri.Iterator.sstable.Data.DataFile.SizeOnDisk) < ri.Iterator.nextBlockNumber*ri.Iterator.blockManager.BM.BlockSize {
+			return false
+		}
+	}
+	rec, _ := ri.Iterator.sstable.Data.ReadRecord(ri.Iterator.blockManager, ri.Iterator.nextBlockNumber, ri.Iterator.sstable.CompressionKey)
+	if rec.Key == nil {
+		return false // Nema vise zapisa
+	}
+	return bytes.Compare(rec.Key, []byte(ri.StartKey)) >= 0 && bytes.Compare(rec.Key, []byte(ri.EndKey)) <= 0
+}
+
 func (ri *RangeIterator) Next() (adapter.MemtableEntry, bool) {
 	if ri.Iterator.currentRecord.Key == nil {
 		return adapter.MemtableEntry{}, false // Nema vise zapisa
@@ -163,4 +201,11 @@ func (ri *RangeIterator) Next() (adapter.MemtableEntry, bool) {
 	}
 
 	return record, true
+}
+
+func (ri *RangeIterator) Close() {
+	ri.Iterator.Stop()
+	ri.Iterator = nil
+	ri.StartKey = ""
+	ri.EndKey = ""
 }

@@ -2,34 +2,25 @@ package lsmtree
 
 import (
 	"bytes"
-	"container/heap"
 	"fmt"
 	"math"
 	"os"
-	"path/filepath"
-	"sort"
 	"strconv"
 
 	"github.com/iigor000/database/config"
-	"github.com/iigor000/database/structures/bloomfilter"
+	"github.com/iigor000/database/structures/block_organization"
 	"github.com/iigor000/database/structures/compression"
-	"github.com/iigor000/database/structures/merkle"
 	"github.com/iigor000/database/structures/sstable"
 )
-
-type SSTableReference struct {
-	Level int // Nivo SSTable-a
-	Gen   int // Generacija SSTable-a
-}
 
 // Get traži vrednost za dati ključ u LSM stablu
 // Vraća najnoviji DataRecord ukoliko je pronađen (na najnižem LSM nivou),
 // Ako je isti key pronađen u više SSTable-ova, vraća vrednost sa najnovijim timestamp-om
-func Get(conf *config.Config, key []byte, dict *compression.Dictionary) (*sstable.DataRecord, error) {
+func Get(conf *config.Config, key []byte, dict *compression.Dictionary, cbm *block_organization.CachedBlockManager) (*sstable.DataRecord, error) {
 	maxLevel := conf.LSMTree.MaxLevel
 
 	for level := 1; level < maxLevel; level++ {
-		refs, err := getSSTableReferences(conf, level)
+		refs, err := getSSTableReferences(conf, level, false) // Sortiraj po generaciji u opadajućem redosledu (najnoviji podaci su kod većih generacija)
 		if err != nil {
 			return nil, err
 		}
@@ -37,12 +28,12 @@ func Get(conf *config.Config, key []byte, dict *compression.Dictionary) (*sstabl
 		var record *sstable.DataRecord = nil
 
 		for _, ref := range refs {
-			table, err := sstable.StartSSTable(ref.Level, ref.Gen, conf, dict)
+			table, err := OpenSSTable(ref.Level, ref.Gen, conf, cbm)
 			if err != nil {
-				return nil, fmt.Errorf("failed to start SSTable for level %d, gen %d: %w", ref.Level, ref.Gen, err)
+				return nil, fmt.Errorf("failed to open SSTable for level %d, gen %d: %w", ref.Level, ref.Gen, err)
 			}
 
-			rec, _ := table.Get(conf, key)
+			rec, _ := table.Get(conf, key, cbm)
 
 			if record == nil {
 				record = rec
@@ -88,70 +79,16 @@ func GetNextSSTableGeneration(conf *config.Config, level int) int {
 	return maxGen + 1 // Vraća sledeću generaciju
 }
 
-// getSSTableReferences vraća sve SSTable-ove na datom nivou, sortirane po generaciji
-func getSSTableReferences(conf *config.Config, level int) ([]*SSTableReference, error) {
-	dir := fmt.Sprintf("%s/%d", conf.SSTable.SstableDirectory, level)
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-
-		return nil, fmt.Errorf("failed to read level %d directory '%s' : %w", level, dir, err)
-	}
-
-	var refs []*SSTableReference
-
-	for _, entry := range entries {
-		if entry.IsDir() {
-			genDir := filepath.Join(dir, entry.Name())
-			gen, err := strconv.Atoi(entry.Name())
-			if err != nil {
-				return nil, fmt.Errorf("failed to parse generation from directory name '%s': %w", genDir, err)
-			}
-
-			tocPath := filepath.Join(genDir, fmt.Sprintf("usertable-%06d-Data.db", gen))
-			singlefile := filepath.Join(genDir, fmt.Sprintf("usertable-%06d-SSTable.db", gen))
-
-			if sstable.FileExists(tocPath) || sstable.FileExists(singlefile) {
-				refs = append(refs, &SSTableReference{Level: level, Gen: gen})
-			}
-
-		}
-	}
-
-	sortReferencesByGen(refs, false) // Sortiraj po generaciji u opadajućem redosledu (najnoviji podaci su kod većih generacija)
-	return refs, err
-}
-
-// sortReferencesByGen sortira SSTableReference-ove po generaciji
-// Ako je ascending == true, sortira u rastućem redosledu
-func sortReferencesByGen(refs []*SSTableReference, ascending ...bool) {
-	inAscendingOrder := len(ascending) == 0 || ascending[0]
-
-	if inAscendingOrder {
-		// sortiraj u rastućem redosledu
-		sort.Slice(refs, func(i, j int) bool {
-			return refs[i].Gen < refs[j].Gen
-		})
-	} else {
-		// sortiraj u opadajućem redosledu
-		sort.Slice(refs, func(i, j int) bool {
-			return refs[i].Gen > refs[j].Gen
-		})
-	}
-}
-
 // Compact pokreće kompakciju LSM stabla spajanjem SSTable-ova
 // Kompakcija se vrši na osnovu podešavanja u konfiguraciji samo ako je ostvaren uslov za kompakciju
-func Compact(conf *config.Config, dict *compression.Dictionary) error {
+func Compact(conf *config.Config, dict *compression.Dictionary, cbm *block_organization.CachedBlockManager) error {
 	if conf.LSMTree.CompactionAlgorithm == "size_tiered" {
-		err := sizeTieredCompaction(conf, dict)
+		err := sizeTieredCompaction(conf, dict, cbm)
 		if err != nil {
 			return fmt.Errorf("error during size-tiered compaction: %w", err)
 		}
 	} else if conf.LSMTree.CompactionAlgorithm == "leveled" {
-		err := leveledCompaction(conf, 1, dict)
+		err := leveledCompaction(conf, 1, dict, cbm)
 		if err != nil {
 			return fmt.Errorf("error during leveled compaction: %w", err)
 		}
@@ -162,7 +99,7 @@ func Compact(conf *config.Config, dict *compression.Dictionary) error {
 }
 
 // sizeTieredCompaction vrši kompakciju na osnovu broja SSTable-ova na nivou
-func sizeTieredCompaction(conf *config.Config, dict *compression.Dictionary) error {
+func sizeTieredCompaction(conf *config.Config, dict *compression.Dictionary, cbm *block_organization.CachedBlockManager) error {
 	maxLevel := conf.LSMTree.MaxLevel
 
 	level := 1
@@ -170,29 +107,19 @@ func sizeTieredCompaction(conf *config.Config, dict *compression.Dictionary) err
 	for level < maxLevel {
 		maxSSTablesPerLevel := conf.LSMTree.MaxTablesPerLevel
 
-		refs, err := getSSTableReferences(conf, level)
+		refs, err := getSSTableReferences(conf, level, true) // Sortiraj po generaciji u rastućem redosledu (želimo da kompaktujemo najstarije)
 		if err != nil {
 			return fmt.Errorf("error getting SSTable references for level %d: %v", level, err)
 		}
-		sortReferencesByGen(refs, true) // Sortiraj po generaciji u rastućem redosledu (prvo kompaktujemo najstarije SSTable-ove)
 
 		if len(refs) == 0 || len(refs) == 1 {
 			return nil // Nema SSTable-ova na ovom nivou ili ima samo jedan, ništa ne radimo
 		}
 
 		for len(refs) >= maxSSTablesPerLevel {
-			sst1, err := sstable.StartSSTable(refs[0].Level, refs[0].Gen, conf, dict)
-			if err != nil {
-				return fmt.Errorf("failed to start SSTable for level %d, gen %d: %w", refs[0].Level, refs[0].Gen, err)
-			}
-			sst2, err := sstable.StartSSTable(refs[1].Level, refs[1].Gen, conf, dict)
-			if err != nil {
-				return fmt.Errorf("failed to start SSTable for level %d, gen %d: %w", refs[1].Level, refs[1].Gen, err)
-			}
-
 			// Spaja prve dve tabele i kreira novu SSTable na sledećem nivou
 			// briše stare SSTable-ove
-			err = mergeTables(conf, level+1, sst1, sst2)
+			err = mergeTables(conf, level+1, cbm, refs[0], refs[1])
 			if err != nil {
 				return fmt.Errorf("error merging tables for level %d: %w", level, err)
 			}
@@ -231,31 +158,28 @@ func needCompaction(conf *config.Config, level int, refs []*SSTableReference) (b
 	return false, nil
 }
 
-// getOverlappingSSTables vraća sve SSTable-ove na sledećem nivou koji se preklapaju sa datim SSTable-om
+// getOverlappingReferences vraća sve reference na SSTable-ove na sledećem nivou koji se preklapaju sa datim SSTable-om
 // Preklapanje se vrši na osnovu ključeva u Summary-ju
-func getOverlappingSSTables(conf *config.Config, nextLevel int, minSSTKey []byte, maxSSTKey []byte, dict *compression.Dictionary) ([]*sstable.SSTable, error) {
-	refs, err := getSSTableReferences(conf, nextLevel)
+func getOverlappingReferences(conf *config.Config, nextLevel int, minSSTKey []byte, maxSSTKey []byte, dict *compression.Dictionary, cbm *block_organization.CachedBlockManager) ([]*SSTableReference, error) {
+	refs, err := getSSTableReferences(conf, nextLevel, true)
 	if err != nil {
 		return nil, fmt.Errorf("error getting SSTable references for level %d: %v", nextLevel, err)
 	}
 
-	var overlapping []*sstable.SSTable
+	var overlapping []*SSTableReference
 
 	for _, ref := range refs {
-		table, err := sstable.StartSSTable(ref.Level, ref.Gen, conf, dict)
+		minKey, maxKey, err := sstable.ReadSummaryMinMax(ref.Level, ref.Gen, conf, cbm)
 		if err != nil {
-			return nil, fmt.Errorf("failed to start SSTable for level %d, gen %d: %w", ref.Level, ref.Gen, err)
+			return nil, fmt.Errorf("failed to read summary min/max for level %d, gen %d: %w", ref.Level, ref.Gen, err)
 		}
-
-		minKey := table.Summary.FirstKey
-		maxKey := table.Summary.LastKey
 
 		if bytes.Compare(minKey, maxSSTKey) > 0 || bytes.Compare(maxKey, minSSTKey) < 0 {
 			continue // Nema preklapanja, nastavi dalje
 		}
 
-		// Ako je preklapanje, dodaj tabelu u listu
-		overlapping = append(overlapping, table)
+		// Ako je preklapanje, dodaj referencu u listu
+		overlapping = append(overlapping, ref)
 	}
 
 	return overlapping, nil
@@ -263,12 +187,12 @@ func getOverlappingSSTables(conf *config.Config, nextLevel int, minSSTKey []byte
 
 // leveledCompaction vrši kompakciju spram granice za nivo (maxSSTablesSize = BaseSSTableLimit * LevelSizeMultiplier^(Level))
 // Vršimo kompakciju na ovom nivou sve dok ne dostigne Size ispod granice, pa tek onda na sledećem nivou
-func leveledCompaction(conf *config.Config, level int, dict *compression.Dictionary) error {
+func leveledCompaction(conf *config.Config, level int, dict *compression.Dictionary, cbm *block_organization.CachedBlockManager) error {
 	compactionDone := false
 
 	// Vršimo kompakciju na ovom nivou sve dok ne dostigne određeni Size, pa tek onda na sledećem nivou
 	for ; ; compactionDone = true {
-		refs, err := getSSTableReferences(conf, level)
+		refs, err := getSSTableReferences(conf, level, true) // Sortiraj po generaciji u rastućem redosledu (želimo da kompaktujemo najstarije)
 		if err != nil {
 			return fmt.Errorf("error getting SSTable references for level %d: %w", level, err)
 		}
@@ -286,265 +210,111 @@ func leveledCompaction(conf *config.Config, level int, dict *compression.Diction
 			return nil // Nema SSTable-ova na ovom nivou, ništa ne radimo
 		}
 
-		sst, err := sstable.StartSSTable(refs[0].Level, refs[0].Gen, conf, dict)
+		// Poredimo prvu SSTable sa svim ostalim na sledećem nivou
+		minKey, maxKey, err := sstable.ReadSummaryMinMax(refs[0].Level, refs[0].Gen, conf, cbm)
 		if err != nil {
-			return fmt.Errorf("failed to start SSTable for level %d, gen %d: %w", refs[0].Level, refs[0].Gen, err)
+			return fmt.Errorf("failed to read summary min/max for level %d, gen %d: %w", refs[0].Level, refs[0].Gen, err)
 		}
 
-		overlapping, err := getOverlappingSSTables(conf, level+1, sst.Summary.FirstKey, sst.Summary.LastKey, dict)
+		overlapping, err := getOverlappingReferences(conf, level+1, minKey, maxKey, dict, cbm)
 		if err != nil {
 			return fmt.Errorf("error getting overlapping SSTables for level %d: %w", level+1, err)
 		}
-
 		// Spaja prvi SSTable sa svim preklapajućim SSTable-ovima
 		// briše stare SSTable-ove
-		err = mergeTables(conf, level+1, sst, overlapping...)
+		err = mergeTables(conf, level+1, cbm, refs[0], overlapping...)
 		if err != nil {
 			return fmt.Errorf("error merging tables for level %d: %w", level, err)
 		}
 	}
 
 	if compactionDone {
-		leveledCompaction(conf, level+1, dict)
+		leveledCompaction(conf, level+1, dict, cbm)
 	}
 
 	return nil
 }
 
-// buildSSTableFromRecords pravi novu SSTable na osnovu spojenih zapisa
-// Spaja sve zapise u jednu SSTable, pravi BloomFilter, Merkle stablo i ostale potrebne strukture
-func buildSSTableFromRecords(mergedRecords []*sstable.DataRecord, conf *config.Config, newLevel int, newGen int) error {
-	newSST := sstable.NewEmptySSTable(conf, newLevel, newGen)
-
-	// Pripremi Data
-	db := &sstable.Data{}
-	for _, record := range mergedRecords {
-		db.Records = append(db.Records, *record)
-		if conf.SSTable.UseCompression {
-			newSST.CompressionKey.Add(record.Key)
-		}
-	}
-	newSST.Data = db
-
-	// Pripremi Index
-	ib := &sstable.Index{}
-	for _, record := range mergedRecords {
-		ir := sstable.NewIndexRecord(record.Key, record.Offset)
-		ib.Records = append(ib.Records, ir)
-	}
-	newSST.Index = ib
-
-	// Pripremi Summary
-	summaryLevel := conf.SSTable.SummaryLevel
-	sb := &sstable.Summary{}
-	for i := 0; i < len(ib.Records); i += summaryLevel {
-		// Pravimo summary sa onolko koliko je ostalo
-		end := i + summaryLevel
-		if end > len(ib.Records) {
-			end = len(ib.Records)
-		}
-
-		sr := sstable.SummaryRecord{
-			FirstKey:        ib.Records[i].Key,
-			IndexOffset:     ib.Records[i].IndexOffset,
-			NumberOfRecords: end - i,
-		}
-		sb.Records = append(sb.Records, sr)
-	}
-	newSST.Summary = sb
-
-	// Pripremi BloomFilter
-	fb := bloomfilter.MakeBloomFilter(len(mergedRecords), 0.5)
-	for _, record := range mergedRecords {
-		fb.Add(record.Key)
-		if !record.Tombstone {
-			fb.Add(record.Value)
-		}
-	}
-	newSST.Filter = fb
-
-	// Pripremi Merkle stablo
-	data := make([][]byte, len(mergedRecords))
-	for i, record := range mergedRecords {
-		data[i] = record.Key
-		if !record.Tombstone {
-			data[i] = append(data[i], record.Value...)
-		}
-	}
-	newSST.Metadata = merkle.NewMerkleTree(data)
-
-	dir := fmt.Sprintf("%s/%d", conf.SSTable.SstableDirectory, newLevel)
-	// Upiši SSTable u fajl
-	sstable.WriteSSTable(newSST, dir, conf)
-
-	return nil
-}
-
-// mergeRecords spaja zapise iz više SSTable-ova u jedan
-// Vraća listu spojenih zapisa, sortiranu po ključu i timestamp-u
-// Duplikati se uklanjaju, ostavljajući samo najnoviji zapis za svaki ključ
-func mergeRecordsIter(sst1 *sstable.SSTable, ssts ...*sstable.SSTable) []*sstable.DataRecord {
-	var minHeap MinHeap
-
-	// Kreiramo sve iteratore
-	allTables := append([]*sstable.SSTable{sst1}, ssts...)
-	for _, table := range allTables {
-		it := NewRecordIterator(table.Data.Records)
-		if it.HasNext() {
-			minHeap = append(minHeap, &HeapItem{record: it.Peek(), iterator: it})
-		}
-	}
-
-	heap.Init(&minHeap)
-
-	result := []*sstable.DataRecord{}
-	var latestRec *sstable.DataRecord
-
-	for len(minHeap) > 0 {
-		// Ukloni najmanji element
-		sort.Slice(minHeap, func(i, j int) bool {
-			return bytes.Compare(minHeap[i].record.Key, minHeap[j].record.Key) < 0
-		})
-
-		current := minHeap[0]
-		minHeap = minHeap[1:]
-
-		if latestRec != nil && bytes.Equal(latestRec.Key, current.record.Key) {
-			// isti key -> proveri timestamp
-			if current.record.Timestamp > latestRec.Timestamp {
-				latestRec = current.record
-			}
-		} else {
-			// novi key
-			if latestRec != nil && !latestRec.Tombstone {
-				result = append(result, latestRec)
-			}
-			latestRec = current.record
-		}
-
-		// Popuni heap sa sledećim iz iteratora
-		current.iterator.Next()
-		if current.iterator.HasNext() {
-			minHeap = append(minHeap, &HeapItem{
-				record:   current.iterator.Peek(),
-				iterator: current.iterator,
-			})
-		}
-	}
-
-	// Dodaj i poslednji zapamćen zapis ako nije tombstone
-	if latestRec != nil && !latestRec.Tombstone {
-		result = append(result, latestRec)
-	}
-
-	return result
-}
-
-// mergeTables spaja dva ili više SSTable-ova u jedan novi SSTable na sledećem nivou
-// Ako je merge uspešan, briše stare SSTable fajlove
-func mergeTables(conf *config.Config, newLevel int, sst1 *sstable.SSTable, ssts ...*sstable.SSTable) error {
-	// Spaja sve zapise iz sst1 i ssts u jedan
-	mergedRecords := mergeRecordsIter(sst1, ssts...)
-	nextGen := GetNextSSTableGeneration(conf, newLevel)
-
-	// Kreira novi SSTable na sledećem nivou
-	err := buildSSTableFromRecords(mergedRecords, conf, newLevel, nextGen)
+func cleanupNames(conf *config.Config, level int) error {
+	references, err := getSSTableReferences(conf, level, true) // Sortiraj po generaciji u rastućem redosledu
 	if err != nil {
-		return fmt.Errorf("error building SSTable from merged records: %w", err)
-	} else {
-		// Ako je merge uspešan, obriši stare SSTable fajlove
-		err = sst1.DeleteFiles(conf)
-		if err != nil {
-			return fmt.Errorf("error deleting files for SSTable %d: %w", sst1.Gen, err)
-		}
-		for _, sst := range ssts {
-			err = sst.DeleteFiles(conf)
-			if err != nil {
-				return fmt.Errorf("error deleting files for SSTable %d: %w", sst.Gen, err)
-			}
-		}
-		return nil
+		return fmt.Errorf("failed to get SSTable references for level %d: %w", level, err)
 	}
+
+	for i, ref := range references {
+		genTarget := i + 1
+
+		if ref.Gen == genTarget {
+			continue
+		}
+
+		// Preimenuj fajlove na starom nivou
+		err := Rename(conf, ref.Level, ref.Gen, genTarget)
+		if err != nil {
+			return fmt.Errorf("failed to rename SSTable files for level %d, gen %d: %w", ref.Level, ref.Gen, err)
+		}
+	}
+	return nil
 }
 
-// mergeRecords spaja zapise iz više SSTable-ova u jedan
-// Vraća listu spojenih zapisa, sortiranu po ključu i timestamp-u
-// Duplikati se uklanjaju, ostavljajući samo najnoviji zapis za svaki ključ
-// func mergeRecordsAndWriteData(conf *config.Config, newLevel int, newGen int, sst1 *sstable.SSTable, ssts ...*sstable.SSTable) ([]*sstable.DataRecord, error) {
-// 	var minHeap MinHeap
-// 	dict := compression.NewDictionary()
-// 	bm := block_organization.NewBlockManager(conf)
-// 	path := fmt.Sprintf("%s/%d/%d", conf.SSTable.SstableDirectory, newLevel, newGen) // Putanja za SSTable (direktorijum novog nivoa)
-// 	dataFilename := sstable.CreateFileName(path, newGen, "Data", "db")
+// mergeTables spaja dva ili više SSTable-ova u jedan novi SSTable i upisuje ga na newLevel
+// Briše stare fajlove SSTable-ova koji su spojeni
+func mergeTables(conf *config.Config, newLevel int, cbm *block_organization.CachedBlockManager, sst1 *SSTableReference, ssts ...*SSTableReference) error {
+	allRefs := append([]*SSTableReference{sst1}, ssts...)
+	iterators := make([]GenericIterator, 0, len(allRefs))
 
-// 	// Kreiramo sve iteratore i pravimo dictionary
-// 	allTables := append([]*sstable.SSTable{sst1}, ssts...)
-// 	for _, table := range allTables {
-// 		it := NewRecordIterator(table.Data.Records)
-// 		if it.HasNext() {
-// 			minHeap = append(minHeap, &HeapItem{record: it.Peek(), iterator: it})
-// 		}
-// 		for _, record := range table.Data.Records {
-// 			dict.Add(record.Key)
-// 		}
-// 	}
+	for _, ref := range allRefs {
+		iter, err := NewSSTableIterator(ref, conf, cbm)
+		if err != nil {
+			return fmt.Errorf("failed to create iterator for SSTable %d: %w", ref.Gen, err)
+		}
+		iterators = append(iterators, &SSTableIteratorAdapter{iter: iter})
+	}
 
-// 	heap.Init(&minHeap)
+	// Kreiraj novi SSTable builder
+	nextGen := GetNextSSTableGeneration(conf, newLevel)
+	builder, err := NewSSTableBuilder(newLevel, nextGen, conf)
+	if err != nil {
+		return fmt.Errorf("failed to create new SSTable builder: %w", err)
+	}
 
-// 	result := []*sstable.DataRecord{}
-// 	var latestRec *sstable.DataRecord
+	// K-way merge koristeći heap
+	mergedIter := NewMergedIterator(iterators...) // sortira po key, timestamp desc
 
-// 	rec := 0
-// 	bn := 0
+	for mergedIter.HasNext() {
+		entry := mergedIter.Next()
 
-// 	for len(minHeap) > 0 {
-// 		// Ukloni najmanji element
-// 		sort.Slice(minHeap, func(i, j int) bool {
-// 			return bytes.Compare(minHeap[i].record.Key, minHeap[j].record.Key) < 0
-// 		})
+		if entry.Tombstone {
+			continue // preskoči obrisane
+		}
 
-// 		current := minHeap[0]
-// 		minHeap = minHeap[1:]
+		err := builder.Write(entry)
+		if err != nil {
+			return fmt.Errorf("failed to write entry: %w", err)
+		}
+	}
 
-// 		if latestRec != nil && bytes.Equal(latestRec.Key, current.record.Key) {
-// 			// isti key -> proveri timestamp
-// 			if current.record.Timestamp > latestRec.Timestamp {
-// 				latestRec = current.record
-// 			}
-// 		} else {
-// 			// novi key
-// 			if latestRec != nil && !latestRec.Tombstone {
-// 				bn, err := latestRec.WriteDataRecord(dataFilename, dict, bm)
-// 				if err != nil {
-// 					return nil, fmt.Errorf("error writing data record to file %s: %w", dataFilename, err)
-// 				}
-// 				result = append(result, latestRec)
-// 				result[rec].Offset = bn * conf.Block.BlockSize // Racunamo ofset kao broj bloka pomnozen sa velicinom bloka
-// 				rec++
-// 			}
-// 			latestRec = current.record
-// 		}
+	err = builder.Finish(cbm)
+	if err != nil {
+		return fmt.Errorf("failed to finish SSTable build: %w", err)
+	}
 
-// 		// Popuni heap sa sledećim iz iteratora
-// 		current.iterator.Next()
-// 		if current.iterator.HasNext() {
-// 			minHeap = append(minHeap, &HeapItem{
-// 				record:   current.iterator.Peek(),
-// 				iterator: current.iterator,
-// 			})
-// 		}
-// 	}
+	// Cleanup
+	mergedIter.Close()
 
-// 	// Dodaj i poslednji zapamćen zapis ako nije tombstone
-// 	if latestRec != nil && !latestRec.Tombstone {
-// 		bn, err := latestRec.WriteDataRecord(dataFilename, dict, bm)
-// 		if err != nil {
-// 			return nil, fmt.Errorf("error writing data record to file %s: %w", dataFilename, err)
-// 		}
-// 		result[rec].Offset = bn * conf.Block.BlockSize // Racunamo ofset kao broj bloka pomnozen sa velicinom bloka
-// 	}
+	// Obriši stare SSTable-ove (HANDLE: ovo može biti opasno zbog drugačijeg imenovanja)
+	if err := sst1.DeleteFiles(conf); err != nil {
+		return err
+	}
+	for _, s := range ssts {
+		if err := s.DeleteFiles(conf); err != nil {
+			return err
+		}
+	}
 
-// 	db.DataFile.SizeOnDisk = int64(bn * conf.Block.BlockSize)
+	// Preimenuj fajlove na nivoima
+	cleanupNames(conf, newLevel-1)
+	cleanupNames(conf, newLevel)
 
-// 	return result, nil
-// }
+	return nil
+}
