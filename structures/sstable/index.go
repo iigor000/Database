@@ -187,11 +187,13 @@ func (ib *Index) FindDataOffsetWithKey(indexOffset int, key []byte, bm *block_or
 			}
 			return -1, fmt.Errorf("key not found in index")
 		}
-		for i := 1; i < 1000; i++ {
+		i := 1
+		for {
 			if len(serlzdIndexRec)+(i*1) <= i*bm.BM.BlockSize {
 				bnum += i
 				break
 			}
+			i++
 		}
 	}
 	return -1, fmt.Errorf("key not found in index")
@@ -224,11 +226,13 @@ func (ib *Index) FindDataOffsetWithPrefix(indexOffset int, key []byte, bm *block
 		if bytes.HasPrefix(indexRecord.Key, []byte(key)) {
 			return indexRecord.Offset, nil
 		}
-		for i := 1; i < 1000; i++ {
+		i := 1
+		for {
 			if len(serlzdIndexRec)+(i*1) <= i*bm.BM.BlockSize {
 				bnum += i
 				break
 			}
+			i++
 		}
 	}
 	return -1, fmt.Errorf("key not found in index")

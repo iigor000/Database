@@ -314,10 +314,19 @@ func (d *Data) ReadRecord(bm *block_organization.CachedBlockManager, blockNumber
 	}
 
 	record.Offset = blockNumber * bm.BM.BlockSize
+	nextBlock := 0
+	i := 1
+	for {
+		if len(blockData)+(i*1) <= i*bm.BM.BlockSize {
+			nextBlock = blockNumber + i
+			break
+		}
+		i++
+	}
 	return adapter.MemtableEntry{
 		Key:       record.Key,
 		Value:     record.Value,
 		Timestamp: record.Timestamp,
 		Tombstone: record.Tombstone,
-	}, blockNumber + 1
+	}, nextBlock
 }
