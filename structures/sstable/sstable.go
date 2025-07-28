@@ -292,14 +292,13 @@ func buildMetadata(gen int, path string, db *Data, singleFile bool, conf *config
 }
 
 func ReadBloomFilter(path string, conf *config.Config, bm *block_organization.CachedBlockManager) (bloomfilter.BloomFilter, error) {
-	println("Reading Bloom filter from file:", path)
+
 	block, err := bm.Read(path, 0)
 
 	if err != nil {
 		return bloomfilter.BloomFilter{}, fmt.Errorf("error reading bloom filter from file %s: %w", path, err)
 	}
 	fb := bloomfilter.Deserialize(block)
-	println(len(block))
 	return fb[0], nil
 }
 
@@ -354,11 +353,9 @@ func BuildSSTable(entries []adapter.MemtableEntry, conf *config.Config, dict *co
 			Structure:         "skiplist",
 		},
 	}
-	println("Building SSTable with", len(entries), "entries")
 
 	memtable := memtable.NewMemtable(conf1)
 	for _, entry := range entries {
-		println("Adding entry to Memtable:", string(entry.Key), "Value:", string(entry.Value))
 		memtable.Update(entry.Key, entry.Value, entry.Timestamp, entry.Tombstone)
 	}
 	memtable.Capacity = memtable.Size
@@ -502,7 +499,6 @@ func StartSSTable(level int, gen int, conf *config.Config, dict *compression.Dic
 		}
 		if sstable.UseCompression {
 			sstable.CompressionKey = dict
-			println("UseCompression")
 
 		} else {
 			sstable.CompressionKey = nil
@@ -526,14 +522,12 @@ func StartSSTable(level int, gen int, conf *config.Config, dict *compression.Dic
 	if err != nil {
 		return nil, fmt.Errorf("error reading bloom filter: %w", err)
 	}
-	println("Reading summary..")
 	// Ucitavamo Summary
 	summaryPath := toc["Summary"]
 	summary, err := ReadSummary(summaryPath, conf, 0, 0, cbm)
 	if err != nil {
 		return nil, fmt.Errorf("error reading summary: %w", err)
 	}
-	println("Summary loaded from file:", summaryPath)
 
 	// Ucitavamo kompresiju
 	dictpath := toc["Compression"]
@@ -541,7 +535,6 @@ func StartSSTable(level int, gen int, conf *config.Config, dict *compression.Dic
 	if err != nil {
 		return nil, fmt.Errorf("error reading compression dictionary: %w", err)
 	}
-	println("Compression dictionary loaded from file:", dictpath)
 	dictionary := dict
 	if !UseCompression {
 		dictionary = nil // Ako ne koristimo kompresiju, dictionary je nil

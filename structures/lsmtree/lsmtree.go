@@ -25,7 +25,6 @@ func Get(conf *config.Config, key []byte, dict *compression.Dictionary, cbm *blo
 			return nil, err
 		}
 		var record *sstable.DataRecord = nil
-		println("Tražim ključ:", string(key), "u LSM stablu...")
 		for _, ref := range refs {
 			fmt.Print("Otvaram SSTable za nivo ", ref.Level, ", generacija ", ref.Gen, "...\n")
 			table, err := sstable.StartSSTable(ref.Level, ref.Gen, conf, dict, cbm)

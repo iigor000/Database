@@ -136,7 +136,7 @@ func TestDatabase_PutMany(t *testing.T) {
 
 	dataDir := fmt.Sprintf("testdata/%s", "db_test")
 	fmt.Printf("Korišćenje postojećeg direktorijuma: %s\n", dataDir)
-
+	defer os.RemoveAll(dataDir)
 	// Konfiguracija za test
 	cfg := &config.Config{
 		Block: config.BlockConfig{
@@ -157,7 +157,7 @@ func TestDatabase_PutMany(t *testing.T) {
 		SSTable: config.SSTableConfig{
 			UseCompression:   false,
 			SummaryLevel:     10,
-			SstableDirectory: filepath.Join(dataDir, "sstable"),
+			SstableDirectory: "data/sstable",
 			SingleFile:       false,
 		},
 		Cache: config.CacheConfig{
@@ -169,9 +169,9 @@ func TestDatabase_PutMany(t *testing.T) {
 		},
 		LSMTree: config.LSMTreeConfig{
 			MaxLevel:            7,
-			CompactionAlgorithm: "leveled",
+			CompactionAlgorithm: "size_tiered",
 			LevelSizeMultiplier: 10,
-			BaseSSTableLimit:    4,
+			BaseSSTableLimit:    10000,
 			MaxTablesPerLevel:   10,
 		},
 		BTree: config.BTreeConfig{
@@ -239,11 +239,14 @@ func TestDatabase_PutMany(t *testing.T) {
 
 	// Provera podataka
 	fmt.Println("Početak provere podataka...")
-	for k, _ := range entries {
+	for k, v := range entries {
 		fmt.Printf("Provera ključa: %s\n", k)
-		_, _, err := db.Get(k)
+		value, _, err := db.Get(k)
 		if err != nil {
 			t.Fatalf("Greška pri dohvatanju ključa %s: %v", k, err)
+		}
+		if string(value) != string(v) {
+			t.Errorf("Vrednost za ključ %s se ne poklapa, očekivano: %s, dobijeno: %s", k, v, value)
 		}
 
 	}
