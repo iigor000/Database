@@ -382,12 +382,12 @@ func WriteSSTable(sstable *SSTable, dir string, conf *config.Config, cbm *block_
 	// Write Data
 	dataPath := CreateFileName(path, sstable.Gen, "Data", "db")
 	if conf.SSTable.UseCompression {
-		_, err = sstable.Data.WriteData(dataPath, conf, sstable.CompressionKey)
+		_, err = sstable.Data.WriteData(dataPath, conf, sstable.CompressionKey, nil)
 		if err != nil {
 			panic("Error writing data to file: " + err.Error())
 		}
 	} else {
-		_, err = sstable.Data.WriteData(dataPath, conf, nil)
+		_, err = sstable.Data.WriteData(dataPath, conf, nil, nil)
 		if err != nil {
 			panic("Error writing data to file: " + err.Error())
 		}
@@ -454,6 +454,19 @@ func NewEmptySSTable(conf *config.Config, level int, generation int) *SSTable {
 		sstable.CompressionKey = compression.NewDictionary()
 	}
 	return sstable
+}
+
+// Kreira Stable od liste Data Record-a
+func BuildSSTable(drs []DataRecord, conf *config.Config, dict *compression.Dictionary, cbm *block_organization.CachedBlockManager, generation int, level int) *SSTable {
+	conf1 := &config.Config{
+		Memtable: config.MemtableConfig{
+			NumberOfMemtables: 1,
+			NumberOfEntries:   len(drs),
+			Structure:         "skiplist",
+		},
+	}
+	memtable := memtable.NewMemtable(conf1)
+	return FlushSSTable(conf, *memtable, generation, dict, cbm)
 }
 
 // Get traži ključ u SSTable-u i vraća odgovarajući DataRecord
