@@ -280,3 +280,17 @@ func (db *Database) Close() {
 		}
 	}
 }
+
+func (db *Database) PrefixScan(prefix string, pageNumber int, pageSize int, m bool) []adapter.MemtableEntry {
+	if m {
+		return db.memtables.PrefixScan(prefix, pageNumber, pageSize)
+	}
+	return nil
+}
+
+func (db *Database) RangeScan(start, end string, pageNumber int, pageSize int, m bool) []adapter.MemtableEntry {
+	if m {
+		return db.memtables.RangeScan([]byte(start), []byte(end), pageNumber, pageSize)
+	}
+	return nil
+}

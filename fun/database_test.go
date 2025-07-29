@@ -178,7 +178,7 @@ func TestDatabase_PutMany(t *testing.T) {
 			MinSize: 16,
 		},
 		Compression: config.CompressionConfig{
-			DictionaryDir: filepath.Join(dataDir, "compression_dict"),
+			DictionaryDir: filepath.Join(dataDir, "compression.db"),
 		},
 	}
 

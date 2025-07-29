@@ -41,7 +41,7 @@ func main() {
 
 	fun.CreateBucket(db)
 
-	helpstr := "help - Print Commands\nput - Add Entry to Database\nget - Get Entry from Database\ndelete - Delete Entry from Database\naddbl - Add BloomFilter\ndelbl - Delete BloomFilter\naddtobl - Add key to BloomFilter\ngetbl - Check key in BloomFilter\naddcms - Add CountMinSketch\ndelcms - Delete CountMinSketch\naddtocms - Add key to CountMinSketch\ngetcms - Check key in CountMinSketch\naddhll - Add HyperLogLog\ndelhll - Delete HyperLogLog\naddtohll - Add key to HyperLogLog\ngethll - Estimate HyperLogLog\naddfp - Add Fingerprint of text\ndelfp - Delete fingerprint\nvalidate - Validate Merkle Tree \nexit - Exit"
+	helpstr := "help - Print Commands\nput - Add Entry to Database\nget - Get Entry from Database\ndelete - Delete Entry from Database\naddbl - Add BloomFilter\ndelbl - Delete BloomFilter\naddtobl - Add key to BloomFilter\ngetbl - Check key in BloomFilter\naddcms - Add CountMinSketch\ndelcms - Delete CountMinSketch\naddtocms - Add key to CountMinSketch\ngetcms - Check key in CountMinSketch\naddhll - Add HyperLogLog\ndelhll - Delete HyperLogLog\naddtohll - Add key to HyperLogLog\ngethll - Estimate HyperLogLog\naddfp - Add Fingerprint of text\ndelfp - Delete fingerprint\nvalidate - Validate Merkle Tree\nprefix_scan - Prefix Scan\nrange_scan - Range Scan\nexit - Exit"
 	fmt.Println(helpstr)
 
 	var exit bool = false
@@ -402,6 +402,87 @@ func main() {
 				fmt.Println("Error validating Merkle Tree:", err)
 			} else {
 				fmt.Println("Merkle Tree validated successfully")
+			}
+		case "prefix_scan":
+			fmt.Println("Enter the prefix to scan")
+			if !scanner.Scan() {
+				break
+			}
+			prefix := strings.TrimSpace(scanner.Text())
+			fmt.Println("Enter page number")
+			if !scanner.Scan() {
+				break
+			}
+			pageNumberStr := strings.TrimSpace(scanner.Text())
+			pageNumber, err := strconv.Atoi(pageNumberStr)
+			if err != nil {
+				fmt.Println("Invalid page number:", err)
+				break
+			}
+			fmt.Println("Enter page size")
+			if !scanner.Scan() {
+				break
+			}
+			pageSizeStr := strings.TrimSpace(scanner.Text())
+			pageSize, err := strconv.Atoi(pageSizeStr)
+			if err != nil {
+				fmt.Println("Invalid page size:", err)
+				break
+			}
+			results := db.PrefixScan(prefix, pageNumber, pageSize, true)
+			if results == nil {
+				fmt.Println("No results found for prefix scan")
+				break
+			} else if len(results) == 0 {
+				fmt.Println("No results found for prefix scan")
+				break
+			}
+			fmt.Printf("Results for prefix '%s' on page %d:\n", prefix, pageNumber)
+			for _, entry := range results {
+				fmt.Printf(" - %s: %s (Timestamp: %d)\n", entry.Key, entry.Value, entry.Timestamp)
+			}
+		case "range_scan":
+			fmt.Println("Enter the start key for range scan")
+			if !scanner.Scan() {
+				break
+			}
+			startKey := strings.TrimSpace(scanner.Text())
+			fmt.Println("Enter the end key for range scan")
+			if !scanner.Scan() {
+				break
+			}
+			endKey := strings.TrimSpace(scanner.Text())
+			fmt.Println("Enter page number")
+			if !scanner.Scan() {
+				break
+			}
+			pageNumberStr := strings.TrimSpace(scanner.Text())
+			pageNumber, err := strconv.Atoi(pageNumberStr)
+			if err != nil {
+				fmt.Println("Invalid page number:", err)
+				break
+			}
+			fmt.Println("Enter page size")
+			if !scanner.Scan() {
+				break
+			}
+			pageSizeStr := strings.TrimSpace(scanner.Text())
+			pageSize, err := strconv.Atoi(pageSizeStr)
+			if err != nil {
+				fmt.Println("Invalid page size:", err)
+				break
+			}
+			results := db.RangeScan(startKey, endKey, pageNumber, pageSize, true)
+			if results == nil {
+				fmt.Println("No results found for range scan")
+				break
+			} else if len(results) == 0 {
+				fmt.Println("No results found for range scan")
+				break
+			}
+			fmt.Printf("Results for range '%s' to '%s' on page %d:\n", startKey, endKey, pageNumber)
+			for _, entry := range results {
+				fmt.Printf(" - %s: %s (Timestamp: %d)\n", entry.Key, entry.Value, entry.Timestamp)
 			}
 		case "exit":
 			fmt.Println("Goodbye!")
