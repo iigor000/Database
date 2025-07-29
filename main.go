@@ -41,7 +41,7 @@ func main() {
 
 	fun.CreateBucket(db)
 
-	helpstr := "help - Print Commands\nput - Add Entry to Database\nget - Get Entry from Database\ndelete - Delete Entry from Database\naddbl - Add BloomFilter\ndelbl - Delete BloomFilter\naddtobl - Add key to BloomFilter\ngetbl - Check key in BloomFilter\naddcms - Add CountMinSketch\ndelcms - Delete CountMinSketch\naddtocms - Add key to CountMinSketch\ngetcms - Check key in CountMinSketch\naddhll - Add HyperLogLog\ndelhll - Delete HyperLogLog\naddtohll - Add key to HyperLogLog\ngethll - Estimate HyperLogLog\naddfp - Add Fingerprint of text\ndelfp - Delete fingerprint\ngetdist - GetHemingway Distance of Two Fingerprints \nexit - Exit"
+	helpstr := "help - Print Commands\nput - Add Entry to Database\nget - Get Entry from Database\ndelete - Delete Entry from Database\naddbl - Add BloomFilter\ndelbl - Delete BloomFilter\naddtobl - Add key to BloomFilter\ngetbl - Check key in BloomFilter\naddcms - Add CountMinSketch\ndelcms - Delete CountMinSketch\naddtocms - Add key to CountMinSketch\ngetcms - Check key in CountMinSketch\naddhll - Add HyperLogLog\ndelhll - Delete HyperLogLog\naddtohll - Add key to HyperLogLog\ngethll - Estimate HyperLogLog\naddfp - Add Fingerprint of text\ndelfp - Delete fingerprint\nvalidate - Validate Merkle Tree \nexit - Exit"
 	fmt.Println(helpstr)
 
 	var exit bool = false
@@ -375,6 +375,33 @@ func main() {
 				fmt.Println("Error getting Hemingway distance:", err)
 			} else {
 				fmt.Printf("Hemingway distance between '%s' and '%s': %d\n", key1, key2, distance)
+			}
+		case "validate":
+			fmt.Println("Input the generation")
+			if !scanner.Scan() {
+				break
+			}
+			generation := strings.TrimSpace(scanner.Text())
+			fmt.Println("Input the level")
+			if !scanner.Scan() {
+				break
+			}
+			level := strings.TrimSpace(scanner.Text())
+			generationInt, err := strconv.Atoi(generation)
+			if err != nil {
+				fmt.Println("Invalid generation:", err)
+				break
+			}
+			levelInt, err := strconv.Atoi(level)
+			if err != nil {
+				fmt.Println("Invalid level:", err)
+				break
+			}
+			err = db.ValidateMerkleTree(generationInt, levelInt)
+			if err != nil {
+				fmt.Println("Error validating Merkle Tree:", err)
+			} else {
+				fmt.Println("Merkle Tree validated successfully")
 			}
 		case "exit":
 			fmt.Println("Goodbye!")

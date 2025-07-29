@@ -255,3 +255,21 @@ func (db *Database) delete(key string) error {
 
 	return nil
 }
+
+func (db *Database) ValidateMerkleTree(generation, level int) error {
+	if generation < 1 || level < 1 {
+		return errors.New("invalid generation or level")
+	}
+	sstable, err := sstable.StartSSTable(level, generation, db.config, db.compression, db.CacheBlockManager)
+	if err != nil {
+		return fmt.Errorf("failed to start SSTable: %w", err)
+	}
+	changed, err := sstable.ValidateMerkleTree(db.config, db.compression, db.CacheBlockManager)
+	if err != nil {
+		return err
+	}
+	if !changed {
+		return nil
+	}
+	return nil
+}
