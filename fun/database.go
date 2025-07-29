@@ -294,3 +294,11 @@ func (db *Database) RangeScan(start, end string, pageNumber int, pageSize int, m
 	}
 	return nil
 }
+
+func (db *Database) MemtablePrefixIterator(prefix string) *memtable.PrefixIterator {
+	return db.memtables.PrefixIterate(prefix)
+}
+
+func (db *Database) MemtableRangeIterator(start, end string) *memtable.RangeIterator {
+	return db.memtables.RangeIterate([]byte(start), []byte(end))
+}

@@ -41,7 +41,7 @@ func main() {
 
 	fun.CreateBucket(db)
 
-	helpstr := "help - Print Commands\nput - Add Entry to Database\nget - Get Entry from Database\ndelete - Delete Entry from Database\naddbl - Add BloomFilter\ndelbl - Delete BloomFilter\naddtobl - Add key to BloomFilter\ngetbl - Check key in BloomFilter\naddcms - Add CountMinSketch\ndelcms - Delete CountMinSketch\naddtocms - Add key to CountMinSketch\ngetcms - Check key in CountMinSketch\naddhll - Add HyperLogLog\ndelhll - Delete HyperLogLog\naddtohll - Add key to HyperLogLog\ngethll - Estimate HyperLogLog\naddfp - Add Fingerprint of text\ndelfp - Delete fingerprint\nvalidate - Validate Merkle Tree\nprefix_scan - Prefix Scan\nrange_scan - Range Scan\nexit - Exit"
+	helpstr := "help - Print Commands\nput - Add Entry to Database\nget - Get Entry from Database\ndelete - Delete Entry from Database\naddbl - Add BloomFilter\ndelbl - Delete BloomFilter\naddtobl - Add key to BloomFilter\ngetbl - Check key in BloomFilter\naddcms - Add CountMinSketch\ndelcms - Delete CountMinSketch\naddtocms - Add key to CountMinSketch\ngetcms - Check key in CountMinSketch\naddhll - Add HyperLogLog\ndelhll - Delete HyperLogLog\naddtohll - Add key to HyperLogLog\ngethll - Estimate HyperLogLog\naddfp - Add Fingerprint of text\ndelfp - Delete fingerprint\nvalidate - Validate Merkle Tree\nprefix_scan - Prefix Scan\nrange_scan - Range Scan\nprefix_iterate - Prefix Iterate\nrange_iterate - Range Iterate\nexit - Exit"
 	fmt.Println(helpstr)
 
 	var exit bool = false
@@ -483,6 +483,91 @@ func main() {
 			fmt.Printf("Results for range '%s' to '%s' on page %d:\n", startKey, endKey, pageNumber)
 			for _, entry := range results {
 				fmt.Printf(" - %s: %s (Timestamp: %d)\n", entry.Key, entry.Value, entry.Timestamp)
+			}
+		case "prefix_iterate":
+			fmt.Println("Enter the prefix to iterate")
+			if !scanner.Scan() {
+				break
+			}
+			prefix := strings.TrimSpace(scanner.Text())
+			fmt.Println("Enter m/s (memtables or sstables)")
+			if !scanner.Scan() {
+				break
+			}
+			m := strings.TrimSpace(scanner.Text())
+			if m != "m" && m != "s" {
+				fmt.Println("Invalid option, use 'm' for memtables or 's' for sstables")
+				break
+			}
+			if m == "m" {
+				ip := db.MemtablePrefixIterator(prefix)
+				if ip == nil {
+					fmt.Println("No more entries found for prefix iteration")
+					break
+				}
+				for {
+					fmt.Println("Next/Quit (n/q):")
+					if !scanner.Scan() {
+						break
+					}
+					action := strings.TrimSpace(scanner.Text())
+					if action == "q" {
+						break
+					}
+					if ip == nil {
+						fmt.Println("No more entries found for prefix iteration")
+						break
+					}
+					entry, ok := ip.Next()
+					if !ok {
+						fmt.Println("No more entries found for prefix iteration")
+						break
+					}
+					fmt.Printf(" - %s: %s (Timestamp: %d)\n", entry.Key, entry.Value, entry.Timestamp)
+				}
+			}
+		case "range_iterate":
+			fmt.Println("Enter the start key for range iteration")
+			if !scanner.Scan() {
+				break
+			}
+			startKey := strings.TrimSpace(scanner.Text())
+			fmt.Println("Enter the end key for range iteration")
+			if !scanner.Scan() {
+				break
+			}
+			endKey := strings.TrimSpace(scanner.Text())
+			fmt.Println("Enter m/s (memtables or sstables)")
+			if !scanner.Scan() {
+				break
+			}
+			m := strings.TrimSpace(scanner.Text())
+			if m != "m" && m != "s" {
+				fmt.Println("Invalid option, use 'm' for memtables or 's' for sstables")
+				break
+			}
+			if m == "m" {
+				ip := db.MemtableRangeIterator(startKey, endKey)
+				if ip == nil {
+					fmt.Println("No more entries found for range iteration")
+					break
+				}
+				for {
+					fmt.Println("Next/Quit (n/q):")
+					if !scanner.Scan() {
+						break
+					}
+					action := strings.TrimSpace(scanner.Text())
+					if action == "q" {
+						break
+					}
+					entry, ok := ip.Next()
+					if !ok {
+						fmt.Println("No more entries found for range iteration")
+						break
+					}
+					fmt.Printf(" - %s: %s (Timestamp: %d)\n", entry.Key, entry.Value, entry.Timestamp)
+				}
 			}
 		case "exit":
 			fmt.Println("Goodbye!")
