@@ -1,7 +1,0 @@
-Generation: 1
-Data: data/sstable/2/2/usertable-000001-Data.db
-Index: data/sstable/2/2/usertable-000001-Index.db
-Summary: data/sstable/2/2/usertable-000001-Summary.db
-Filter: data/sstable/2/2/usertable-000001-Filter.db
-Metadata: data/sstable/2/2/usertable-000001-Metadata.db
-Compression: data/sstable/2/2/usertable-000001-CompressionInfo.db

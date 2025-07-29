@@ -114,9 +114,6 @@ func (db *Database) put(key string, value []byte) error {
 	shouldFlush := db.memtables.Update([]byte(key), []byte(value), int64(time.Now().Unix()), false)
 
 	if shouldFlush {
-		// Flush Memtable na disk
-		println("Flushing Memtable to disk...")
-		println("Gen to Flush:", db.memtables.GenToFlush)
 		sstable.FlushSSTable(db.config, *db.memtables.Memtables[0], 1, db.memtables.GenToFlush, db.compression, db.CacheBlockManager)
 
 		db.lastFlushedGen = db.memtables.GenToFlush // azuriramo poslednju flushovanu generaciju
@@ -173,7 +170,6 @@ func (db *Database) Get(key string) ([]byte, bool, error) {
 }
 
 func (db *Database) get(key string) ([]byte, bool, error) {
-
 	keyByte := []byte(key)
 
 	// Proveravamo da li je u Memtable-u

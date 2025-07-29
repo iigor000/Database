@@ -176,7 +176,8 @@ func ReadCompressionInfo(path string, conf *config.Config, bm *block_organizatio
 
 func buildData(mem memtable.Memtable, conf *config.Config, gen int, path string, singleFile bool, dict *compression.Dictionary, cbm *block_organization.CachedBlockManager) *Data {
 	db := &Data{}
-	for i := 0; i < mem.Capacity; i++ {
+	// Use len(mem.Keys) instead of mem.Capacity to avoid index out of bounds
+	for i := 0; i < len(mem.Keys); i++ {
 		entry, found := mem.Structure.Search(mem.Keys[i])
 		if found {
 			dr := NewDataRecord(entry.Key, entry.Value, entry.Timestamp, entry.Tombstone)
@@ -292,7 +293,6 @@ func buildMetadata(gen int, path string, db *Data, singleFile bool, conf *config
 }
 
 func ReadBloomFilter(path string, conf *config.Config, bm *block_organization.CachedBlockManager) (bloomfilter.BloomFilter, error) {
-
 	block, err := bm.Read(path, 0)
 
 	if err != nil {
@@ -345,7 +345,7 @@ func (sstable *SSTable) ReadFilterMetaCompression(path string, offsets map[strin
 }
 
 // Kreira Stable od liste Data Record-a
-func BuildSSTable(entries []adapter.MemtableEntry, conf *config.Config, dict *compression.Dictionary, cbm *block_organization.CachedBlockManager, generation int, level int) *SSTable {
+func BuildSSTable(entries []adapter.MemtableEntry, conf *config.Config, dict *compression.Dictionary, cbm *block_organization.CachedBlockManager, level int, gen int) *SSTable {
 	conf1 := &config.Config{
 		Memtable: config.MemtableConfig{
 			NumberOfMemtables: 1,
@@ -359,7 +359,7 @@ func BuildSSTable(entries []adapter.MemtableEntry, conf *config.Config, dict *co
 		memtable.Update(entry.Key, entry.Value, entry.Timestamp, entry.Tombstone)
 	}
 	memtable.Capacity = memtable.Size
-	return FlushSSTable(conf, *memtable, level, generation, dict, cbm)
+	return FlushSSTable(conf, *memtable, level, gen, dict, cbm)
 }
 
 // Get traži ključ u SSTable-u i vraća odgovarajući DataRecord

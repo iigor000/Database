@@ -21,10 +21,8 @@ func NewLSMTreeIterator(tables []*sstable.SSTable, bm *block_organization.Cached
 
 	for _, sstable := range tables {
 		iter := sstable.NewSSTableIterator(bm)
-		iterators = append(iterators, iter)
-
-		if iter == nil {
-			continue // Ako iterator nije uspeo da se kreira, preskoči ovaj SSTable
+		if iter != nil {
+			iterators = append(iterators, iter)
 		}
 	}
 
@@ -32,86 +30,56 @@ func NewLSMTreeIterator(tables []*sstable.SSTable, bm *block_organization.Cached
 		return nil
 	}
 
-	minEntry := adapter.MemtableEntry{Key: nil}
-	for _, iter := range iterators {
-		it, ok := iter.Next()
-		if !ok {
-			continue // Ako iterator nema sledeći element, preskoči
-		}
-
-		if minEntry.Key == nil {
-			minEntry = it
-		}
-
-		if bytes.Compare(it.Key, minEntry.Key) < 0 {
-			minEntry = it // Pronađen je manji ključ, ažuriraj minEntry
-		} else if bytes.Equal(minEntry.Key, it.Key) && minEntry.Timestamp < it.Timestamp {
-			minEntry = it // Ažuriraj minEntry ako je timestamp veći
-		}
-	}
-
-	for _, iter := range iterators {
-		if iter != nil {
-			if iter.CurrentRecord.Key != nil {
-				iter.CurrentRecord = minEntry // Postavi trenutni zapis na najmanji ključ
-			}
-		}
-	}
-
 	return &LSMTreeIterator{
-		CurrentEntry: &minEntry,
 		iterators:    iterators,
+		CurrentEntry: nil, // Početno je nil, Next() će postaviti prvi validan
 	}
 }
 
 func (l *LSMTreeIterator) Next() *adapter.MemtableEntry {
-	if len(l.iterators) == 0 {
-		return nil // Nema više elemenata
-	}
+	for {
+		var minKey []byte
+		var minIndex int = -1
 
-	currentEntry := l.CurrentEntry
-	minEntry := adapter.MemtableEntry{Key: nil}
-	for _, iter := range l.iterators {
-		if iter == nil {
-			continue // Ako iterator nije uspeo da se kreira, preskoči
-		}
-
-		it, ok := iter.Next()
-		if !ok {
-			continue // Ako iterator nema sledeći element, preskoči
-		}
-
-		if minEntry.Key == nil || bytes.Compare(it.Key, minEntry.Key) < 0 {
-			minEntry = it // Pronađen je manji ključ, ažuriraj minEntry
-		} else if minEntry.Timestamp < it.Timestamp {
-			minEntry = it // Ažuriraj minEntry ako je timestamp veći
-		}
-	}
-
-	if minEntry.Key == nil {
-		l.Stop()            // Ako nema više elemenata, zaustavi iteraciju
-		return currentEntry // Nema više elemenata
-	}
-
-	for _, iter := range l.iterators {
-		if iter != nil {
-			if iter.CurrentRecord.Key != nil {
-				iter.CurrentRecord = minEntry // Postavi trenutni zapis na najmanji ključ
+		// Pronađi iterator sa najmanjim trenutnim ključem
+		for i, iter := range l.iterators {
+			entry := iter.Peek()
+			if entry == nil {
+				continue
+			}
+			if minKey == nil || bytes.Compare(entry.Key, minKey) < 0 {
+				minKey = entry.Key
+				minIndex = i
 			}
 		}
-	}
 
-	return currentEntry
-}
+		if minIndex == -1 {
+			l.CurrentEntry = nil // Nema više validnih iteratora
+			return nil
+		}
 
-func (l *LSMTreeIterator) Stop() {
-	for _, iter := range l.iterators {
-		if iter != nil {
-			iter.Stop()
+		// Skupi sve zapise sa tim ključem i zadrži onaj sa najvećim timestamp-om
+		var bestEntry *adapter.MemtableEntry
+		var itersToAdvance []*sstable.SSTableIterator
+		for _, iter := range l.iterators {
+			entry := iter.Peek()
+			if entry != nil && bytes.Equal(entry.Key, minKey) {
+				if bestEntry == nil || entry.Timestamp > bestEntry.Timestamp {
+					bestEntry = entry
+				}
+				itersToAdvance = append(itersToAdvance, iter)
+			}
+		}
+
+		for _, iter := range itersToAdvance {
+			iter.Next() // Pomeri iterator na sledeći element
+		}
+
+		if bestEntry != nil && !bestEntry.Tombstone {
+			l.CurrentEntry = bestEntry
+			return bestEntry
 		}
 	}
-	l.CurrentEntry = &adapter.MemtableEntry{Key: nil} // Oslobodi trenutni zapis
-	l.iterators = nil                                 // Oslobodi iteratore
 }
 
 type PrefixIterator struct {

@@ -24,17 +24,19 @@ func Get(conf *config.Config, key []byte, dict *compression.Dictionary, cbm *blo
 		if err != nil {
 			return nil, err
 		}
+
+		if len(refs) == 0 {
+			continue // Nema SSTable-ova na ovom nivou, ništa ne radimo
+		}
+
 		var record *sstable.DataRecord = nil
 		for _, ref := range refs {
-			fmt.Print("Otvaram SSTable za nivo ", ref.Level, ", generacija ", ref.Gen, "...\n")
 			table, err := sstable.StartSSTable(ref.Level, ref.Gen, conf, dict, cbm)
 			if err != nil {
 				return nil, fmt.Errorf("failed to open SSTable for level %d, gen %d: %w", ref.Level, ref.Gen, err)
 			}
 
-			fmt.Print("Tražim ključ ", string(key), " u SSTable...\n")
 			rec, _ := table.Get(conf, key, cbm)
-
 			if record == nil {
 				record = rec
 			}
@@ -107,7 +109,7 @@ func sizeTieredCompaction(conf *config.Config, dict *compression.Dictionary, cbm
 	for level < maxLevel {
 		maxSSTablesPerLevel := conf.LSMTree.MaxTablesPerLevel
 
-		refs, err := getSSTableReferences(conf, level, true) // Sortiraj po generaciji u rastućem redosledu (želimo da kompaktujemo najstarije)
+		refs, err := getSSTableReferences(conf, level, true) // Sortiraj po generaciji u opadajućem redosledu
 		if err != nil {
 			return fmt.Errorf("error getting SSTable references for level %d: %v", level, err)
 		}
@@ -122,6 +124,10 @@ func sizeTieredCompaction(conf *config.Config, dict *compression.Dictionary, cbm
 			err = mergeTables(conf, level+1, cbm, dict, refs[0], refs[1])
 			if err != nil {
 				return fmt.Errorf("error merging tables for level %d: %w", level, err)
+			}
+			refs, err = getSSTableReferences(conf, level, true)
+			if err != nil {
+				return fmt.Errorf("error getting SSTable references for level %d after merge: %w", level, err)
 			}
 		}
 
@@ -160,7 +166,7 @@ func needCompaction(conf *config.Config, level int, refs []*SSTableReference) (b
 
 // getOverlappingReferences vraća sve reference na SSTable-ove na sledećem nivou koji se preklapaju sa datim SSTable-om
 // Preklapanje se vrši na osnovu ključeva u Summary-ju
-func getOverlappingReferences(conf *config.Config, nextLevel int, minSSTKey []byte, maxSSTKey []byte, dict *compression.Dictionary, cbm *block_organization.CachedBlockManager) ([]*SSTableReference, error) {
+func getOverlappingReferences(conf *config.Config, nextLevel int, minSSTKey []byte, maxSSTKey []byte, cbm *block_organization.CachedBlockManager) ([]*SSTableReference, error) {
 	refs, err := getSSTableReferences(conf, nextLevel, true)
 	if err != nil {
 		return nil, fmt.Errorf("error getting SSTable references for level %d: %v", nextLevel, err)
@@ -216,7 +222,7 @@ func leveledCompaction(conf *config.Config, level int, dict *compression.Diction
 			return fmt.Errorf("failed to read summary min/max for level %d, gen %d: %w", refs[0].Level, refs[0].Gen, err)
 		}
 
-		overlapping, err := getOverlappingReferences(conf, level+1, minKey, maxKey, dict, cbm)
+		overlapping, err := getOverlappingReferences(conf, level+1, minKey, maxKey, cbm)
 		if err != nil {
 			return fmt.Errorf("error getting overlapping SSTables for level %d: %w", level+1, err)
 		}
@@ -232,28 +238,6 @@ func leveledCompaction(conf *config.Config, level int, dict *compression.Diction
 		leveledCompaction(conf, level+1, dict, cbm)
 	}
 
-	return nil
-}
-
-func cleanupNames(conf *config.Config, level int) error {
-	references, err := getSSTableReferences(conf, level, true) // Sortiraj po generaciji u rastućem redosledu
-	if err != nil {
-		return fmt.Errorf("failed to get SSTable references for level %d: %w", level, err)
-	}
-
-	for i, ref := range references {
-		genTarget := i + 1
-
-		if ref.Gen == genTarget {
-			continue
-		}
-
-		// Preimenuj fajlove na starom nivou
-		err := Rename(conf, ref.Level, ref.Gen, genTarget)
-		if err != nil {
-			return fmt.Errorf("failed to rename SSTable files for level %d, gen %d: %w", ref.Level, ref.Gen, err)
-		}
-	}
 	return nil
 }
 
@@ -275,16 +259,14 @@ func mergeTables(conf *config.Config, newLevel int, cbm *block_organization.Cach
 
 	// Kreiraj novi SSTable builder
 	nextGen := GetNextSSTableGeneration(conf, newLevel)
+	fmt.Printf("Spajanje SSTable-ova na nivou %d, generacija %d\n", newLevel, nextGen)
 	builder, err := NewSSTableBuilder(newLevel, nextGen, conf)
 	if err != nil {
 		return fmt.Errorf("failed to create new SSTable builder: %w", err)
 	}
 
-	fmt.Print("Spajam SSTable-ove na nivou ", newLevel, "...\n")
-
 	for {
 		if iter == nil {
-			fmt.Print("Iter je nil...\n")
 			break // Nema više SSTable-ova za spajanje
 		}
 
@@ -298,8 +280,6 @@ func mergeTables(conf *config.Config, newLevel int, cbm *block_organization.Cach
 			break // Nema više elemenata za iteraciju
 		}
 
-		fmt.Print("Zapis sa ključem ", string(entry.Key), " i vrednošću ", string(entry.Value), " je pronađen...\n")
-
 		if entry.Tombstone {
 			continue // preskoči obrisane
 		}
@@ -310,14 +290,7 @@ func mergeTables(conf *config.Config, newLevel int, cbm *block_organization.Cach
 		}
 	}
 
-	fmt.Print("Završavam spajanje SSTable-ova na nivou ", newLevel, "...\n")
-
-	err = builder.Finish(cbm, dict)
-	if err != nil {
-		return fmt.Errorf("failed to finish SSTable build: %w", err)
-	}
-
-	// Obriši stare SSTable-ove (HANDLE: ovo može biti opasno zbog drugačijeg imenovanja)
+	// Obriši stare SSTable-ove
 	if err := sst1.DeleteFiles(conf); err != nil {
 		return err
 	}
@@ -327,9 +300,10 @@ func mergeTables(conf *config.Config, newLevel int, cbm *block_organization.Cach
 		}
 	}
 
-	// Preimenuj fajlove na nivoima
-	cleanupNames(conf, newLevel-1)
-	cleanupNames(conf, newLevel)
+	err = builder.Finish(cbm, dict)
+	if err != nil {
+		return fmt.Errorf("failed to finish SSTable build: %w", err)
+	}
 
 	return nil
 }

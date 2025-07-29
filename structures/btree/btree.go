@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/iigor000/database/structures/adapter"
 	memtable "github.com/iigor000/database/structures/adapter"
 )
 
@@ -31,7 +30,7 @@ func NewBTree(t int) *BTree {
 	return &BTree{t: t}
 }
 
-func (t *BTree) Search(k []byte) (*adapter.MemtableEntry, bool) {
+func (t *BTree) Search(k []byte) (*memtable.MemtableEntry, bool) {
 	println("Searching for key:", string(k))
 	if t.root == nil {
 		return nil, false

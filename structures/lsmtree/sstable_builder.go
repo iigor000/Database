@@ -40,6 +40,6 @@ func (b *SSTableBuilder) Finish(cbm *block_organization.CachedBlockManager, dict
 		return fmt.Errorf("no entries to write")
 	}
 
-	sstable.BuildSSTable(b.records, b.conf, dict, cbm, b.gen, b.level)
+	sstable.BuildSSTable(b.records, b.conf, dict, cbm, b.level, b.gen)
 	return nil
 }

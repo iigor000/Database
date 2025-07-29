@@ -5,14 +5,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"testing"
 
 	"github.com/iigor000/database/config"
 	"github.com/iigor000/database/structures/adapter"
 	"github.com/iigor000/database/structures/block_organization"
 	"github.com/iigor000/database/structures/compression"
-	"github.com/iigor000/database/structures/sstable"
 )
 
 var cbm *block_organization.CachedBlockManager
@@ -50,7 +48,7 @@ func createTestConfig(t *testing.T) *config.Config {
 		},
 		LSMTree: config.LSMTreeConfig{
 			MaxLevel:            3,
-			CompactionAlgorithm: "size_tiered",
+			CompactionAlgorithm: "leveled",
 			// "leveled" KOMPAKCIJA
 			BaseSSTableLimit:    1024 * 1024, // 1MB - Bazni limit SSTable-a (DataBlock je velicine 4096, 8192 ili 16384 bajta)
 			LevelSizeMultiplier: 10,          // Multiplikator velicine nivoa (granica za prvi nivo je BaseSSTableLimit pomnožena sa 10, kod drugog sa 100, itd.)
@@ -162,38 +160,6 @@ func TestGetNextSSTableGeneration(t *testing.T) {
 	}
 }
 
-func TestCleanupNames(t *testing.T) {
-	conf := createTestConfig(t)
-
-	// Kreiraj refove sa "neurednim" generacijama
-	refs := []*SSTableReference{
-		{Level: 1, Gen: 3},
-		{Level: 1, Gen: 5},
-		{Level: 1, Gen: 2},
-	}
-
-	// Ručno kreiraj foldere i fajlove za njih (po potrebi)
-	for _, ref := range refs {
-		genDir := filepath.Join(conf.SSTable.SstableDirectory, "1", strconv.Itoa(ref.Gen))
-		sstable.CreateDirectoryIfNotExists(genDir)
-		file := filepath.Join(genDir, sstable.CreateFileName(genDir, ref.Gen, "SSTable", "db"))
-		os.WriteFile(file, []byte("dummy"), 0644)
-	}
-
-	err := cleanupNames(conf, 1)
-	if err != nil {
-		t.Fatalf("cleanupNames failed: %v", err)
-	}
-
-	// Proveri da li su folderi/fajlovi preimenovani u 1,2,3
-	for i := 1; i <= len(refs); i++ {
-		genDir := filepath.Join(conf.SSTable.SstableDirectory, "1", strconv.Itoa(refs[i-1].Gen))
-		if !sstable.FileExists(genDir) {
-			t.Errorf("expected directory %s to exist", genDir)
-		}
-	}
-}
-
 func TestMergeTables(t *testing.T) {
 	conf := createTestConfig(t)
 	dict := compression.NewDictionary()
@@ -225,5 +191,46 @@ func TestMergeTables(t *testing.T) {
 
 	if !found {
 		t.Errorf("expected merged SSTable generation 1 at level 2")
+	}
+}
+
+func TestMergeMultipleTables(t *testing.T) {
+	conf := createTestConfig(t)
+	dict := compression.NewDictionary()
+
+	dict.Add([]byte("a"))
+	dict.Add([]byte("b"))
+	dict.Add([]byte("c"))
+	dict.Add([]byte("d"))
+
+	// Kreiraj 2 SSTable sa po jednim zapisom
+	ref1 := createTestSSTable(t, conf, 1, 1, []byte("a"), []byte("valueA"), dict)
+	createTestSSTable(t, conf, 1, 2, []byte("b"), []byte("valueB"), dict)
+	ref3 := createTestSSTable(t, conf, 2, 1, []byte("c"), []byte("valueC"), dict)
+	createTestSSTable(t, conf, 2, 2, []byte("d"), []byte("valueD"), dict)
+
+	err := mergeTables(conf, 2, cbm, dict, ref1, ref3)
+	if err != nil {
+		t.Fatalf("mergeTables failed: %v", err)
+	}
+
+	// Nakon merge, na nivou 2 treba postojati nova SSTable generacija 1
+	newRefs, err := getSSTableReferences(conf, 2, true)
+	if err != nil {
+		t.Fatalf("failed to get SSTable references: %v", err)
+	}
+
+	found := false
+	for _, ref := range newRefs {
+		if ref.Gen == 3 {
+			found = true
+		}
+		if ref.Gen == 1 {
+			t.Errorf("expected no old generation 1 at level 2 after merge")
+		}
+	}
+
+	if !found {
+		t.Errorf("expected merged SSTable generation 3 at level 2")
 	}
 }

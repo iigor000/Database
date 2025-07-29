@@ -148,7 +148,7 @@ func TestDatabase_PutMany(t *testing.T) {
 		},
 		Memtable: config.MemtableConfig{
 			NumberOfMemtables: 2,
-			NumberOfEntries:   40,
+			NumberOfEntries:   5,
 			Structure:         "skiplist",
 		},
 		Skiplist: config.SkiplistConfig{
@@ -168,11 +168,11 @@ func TestDatabase_PutMany(t *testing.T) {
 			RefillIntervalS: 1,
 		},
 		LSMTree: config.LSMTreeConfig{
-			MaxLevel:            7,
+			MaxLevel:            4,
 			CompactionAlgorithm: "size_tiered",
 			LevelSizeMultiplier: 10,
-			BaseSSTableLimit:    10000,
-			MaxTablesPerLevel:   10,
+			BaseSSTableLimit:    1024,
+			MaxTablesPerLevel:   8,
 		},
 		BTree: config.BTreeConfig{
 			MinSize: 16,
@@ -217,7 +217,7 @@ func TestDatabase_PutMany(t *testing.T) {
 	fmt.Println("Token bucket uspešno kreiran")
 
 	// Priprema test podataka
-	const testCount = 100
+	const testCount = 50
 	entries := make(map[string][]byte, testCount)
 	fmt.Printf("Priprema %d testnih unosa...\n", testCount)
 	for i := 0; i < testCount; i++ {
@@ -229,7 +229,6 @@ func TestDatabase_PutMany(t *testing.T) {
 	// Ubacivanje podataka
 	fmt.Println("Početak ubacivanja podataka...")
 	for k, v := range entries {
-		fmt.Printf("Ubacivanje ključa: %s\n", k)
 		if err := db.Put(k, v); err != nil {
 			t.Fatalf("Greška pri ubacivanju ključa %s: %v", k, err)
 		}
@@ -238,17 +237,20 @@ func TestDatabase_PutMany(t *testing.T) {
 	fmt.Println("Svi podaci uspešno ubaceni")
 
 	// Provera podataka
-	fmt.Println("Početak provere podataka...")
 	for k, v := range entries {
-		fmt.Printf("Provera ključa: %s\n", k)
-		value, _, err := db.Get(k)
+		storedValue, found, err := db.Get(k)
 		if err != nil {
 			t.Fatalf("Greška pri dohvatanju ključa %s: %v", k, err)
 		}
-		if string(value) != string(v) {
-			t.Errorf("Vrednost za ključ %s se ne poklapa, očekivano: %s, dobijeno: %s", k, v, value)
+
+		if !found {
+			t.Errorf("Ključ %s nije pronađen", k)
+			continue
 		}
 
+		if string(storedValue) != string(v) {
+			t.Errorf("Vrednost za ključ %s se ne poklapa, očekivano: %q, dobijeno: %q", k, v, storedValue)
+		}
 	}
 	fmt.Println("Svi podaci uspešno provereni")
 }

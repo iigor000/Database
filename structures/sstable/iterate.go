@@ -53,6 +53,15 @@ func (si *SSTableIterator) Stop() {
 	si.nextBlockNumber = -1
 }
 
+func (it *SSTableIterator) Peek() *adapter.MemtableEntry {
+	if it.CurrentRecord.Key == nil {
+		return nil
+	}
+
+	entryCopy := it.CurrentRecord
+	return &entryCopy
+}
+
 type PrefixIterator struct {
 	Iterator *SSTableIterator
 	Prefix   string
