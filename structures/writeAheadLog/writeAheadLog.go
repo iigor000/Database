@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/iigor000/database/config"
@@ -230,13 +231,18 @@ func (w *WAL) ReadRecords() ([]*WALRecord, error) {
 		if fileInfo.Size() == 0 {
 			continue
 		}
-		data, err := w.cachedBM.Read(segment.filePath, 0)
-		if err != nil {
-			return nil, fmt.Errorf("error reading segment %s: %v", segment.filePath, err)
-		}
 
-		reader := bytes.NewReader(data)
-		for reader.Len() > 0 {
+		i := 0
+		for {
+			data, err := w.cachedBM.Read(segment.filePath, i)
+			if err != nil {
+				if strings.Contains(err.Error(), "EOF") {
+					break
+				}
+				return nil, fmt.Errorf("error reading segment %s: %v", segment.filePath, err)
+			}
+
+			reader := bytes.NewReader(data)
 			var crc uint32
 			var timestamp int64
 			var recordType byte
@@ -254,15 +260,19 @@ func (w *WAL) ReadRecords() ([]*WALRecord, error) {
 				return nil, err
 			}
 			if err := binary.Read(reader, binary.BigEndian, &recordType); err != nil {
+				print("Error reading record type: %v\n", err)
 				return nil, err
 			}
 			if err := binary.Read(reader, binary.BigEndian, &tombstoneByte); err != nil {
+				print("Error reading tombstone byte: %v\n", err)
 				return nil, err
 			}
 			if err := binary.Read(reader, binary.BigEndian, &keySize); err != nil {
+				print("Error reading key size: %v\n", err)
 				return nil, err
 			}
 			if err := binary.Read(reader, binary.BigEndian, &valueSize); err != nil {
+				print("Error reading value size: %v\n", err)
 				return nil, err
 			}
 
@@ -337,6 +347,7 @@ func (w *WAL) ReadRecords() ([]*WALRecord, error) {
 					accumulatedData = nil
 				}
 			}
+			i += 1
 		}
 	}
 
