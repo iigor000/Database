@@ -281,20 +281,47 @@ func (db *Database) PrefixScan(prefix string, pageNumber int, pageSize int, m bo
 	if m {
 		return db.memtables.PrefixScan(prefix, pageNumber, pageSize)
 	}
-	return nil
+
+	dr, err := lsmtree.PrefixScan(db.config, prefix, db.CacheBlockManager, db.compression, pageNumber, pageSize)
+	if err != nil {
+		return nil
+	}
+	if dr == nil {
+		return nil // Nema rezultata
+	}
+	entries := make([]adapter.MemtableEntry, 0, len(dr))
+	for _, record := range dr {
+
+		entries = append(entries, adapter.MemtableEntry{
+			Key:       record.Key,
+			Value:     record.Value,
+			Timestamp: record.Timestamp,
+			Tombstone: record.Tombstone,
+		})
+	}
+	return entries
 }
 
 func (db *Database) RangeScan(start, end string, pageNumber int, pageSize int, m bool) []adapter.MemtableEntry {
 	if m {
 		return db.memtables.RangeScan([]byte(start), []byte(end), pageNumber, pageSize)
 	}
-	return nil
-}
+	dr, err := lsmtree.RangeScan(db.config, start, end, db.CacheBlockManager, db.compression, pageNumber, pageSize)
+	if err != nil {
+		return nil
+	}
+	if dr == nil {
+		return nil
+	}
+	entries := make([]adapter.MemtableEntry, 0, len(dr))
+	for _, record := range dr {
 
-func (db *Database) MemtablePrefixIterator(prefix string) *memtable.PrefixIterator {
-	return db.memtables.PrefixIterate(prefix)
-}
-
-func (db *Database) MemtableRangeIterator(start, end string) *memtable.RangeIterator {
-	return db.memtables.RangeIterate([]byte(start), []byte(end))
+		entries = append(entries, adapter.MemtableEntry{
+			Key:       record.Key,
+			Value:     record.Value,
+			Timestamp: record.Timestamp,
+			Tombstone: record.Tombstone,
+		})
+	}
+	return entries
 }

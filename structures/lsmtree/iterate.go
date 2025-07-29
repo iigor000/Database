@@ -196,7 +196,7 @@ func (pi *PrefixIterator) Stop() {
 }
 
 // PrefixScan pretražuje sve SSTable-ove u LSM stablu i vraća sve zapise koji počinju sa datim prefiksom
-func PrefixScan(conf *config.Config, prefix string, cbm *block_organization.CachedBlockManager, dict *compression.Dictionary) ([]*sstable.DataRecord, error) {
+func PrefixScan(conf *config.Config, prefix string, cbm *block_organization.CachedBlockManager, dict *compression.Dictionary, pageNumber, pageSize int) ([]*sstable.DataRecord, error) {
 	maxLevel := conf.LSMTree.MaxLevel
 	//seenKeys := make(map[string]bool)
 	var tables []*sstable.SSTable
@@ -226,8 +226,15 @@ func PrefixScan(conf *config.Config, prefix string, cbm *block_organization.Cach
 	}
 
 	var results []*sstable.DataRecord
-
-	for {
+	index := pageNumber * pageSize
+	endIndex := index + pageSize
+	for i := 0; i < index; i++ {
+		entry := merged.Next()
+		if entry == nil {
+			break // nema više zapisa
+		}
+	}
+	for i := index; i < endIndex; i++ {
 		entry := merged.Next()
 		if entry == nil {
 			break // nema više zapisa
@@ -365,7 +372,7 @@ func (ri *RangeIterator) Stop() {
 }
 
 // RangeScan pretražuje sve SSTable-ove u LSM stablu i vraća sve zapise koji su unutar datog opsega ključeva
-func RangeScan(conf *config.Config, startKey, endKey string, cbm *block_organization.CachedBlockManager, dict *compression.Dictionary) ([]*sstable.DataRecord, error) {
+func RangeScan(conf *config.Config, startKey, endKey string, cbm *block_organization.CachedBlockManager, dict *compression.Dictionary, pageNumber, pageSize int) ([]*sstable.DataRecord, error) {
 	maxLevel := conf.LSMTree.MaxLevel
 	//seenKeys := make(map[string]bool)
 	var tables []*sstable.SSTable
@@ -395,8 +402,15 @@ func RangeScan(conf *config.Config, startKey, endKey string, cbm *block_organiza
 	}
 
 	var results []*sstable.DataRecord
-
-	for {
+	index := pageNumber * pageSize
+	endIndex := index + pageSize
+	for i := 0; i < index; i++ {
+		entry := merged.Next()
+		if entry == nil {
+			break // nema više zapisa
+		}
+	}
+	for i := index; i < endIndex; i++ {
 		entry := merged.Next()
 		if entry == nil {
 			break // nema više zapisa
