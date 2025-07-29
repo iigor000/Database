@@ -396,28 +396,3 @@ func (w *WAL) RemoveSegmentsUpTo(lowWaterMark int) error {
 	w.segments = segmentsToKeep
 	return nil
 }
-
-// // Funkcija koja cisti sve segmente osim aktivnog, koristi se za resetovanje wal-a nakon flush-a memtable-a
-// func (w *WAL) Clear() error {
-// 	if len(w.segments) == 0 {
-// 		return nil
-// 	}
-
-// 	// Obriši sve segmente osim aktivnog
-// 	for _, seg := range w.segments[:len(w.segments)-1] {
-// 		if err := os.Remove(seg.filePath); err != nil {
-// 			return err
-// 		}
-// 	}
-
-// 	// Resetuj aktivni segment
-// 	active := w.segments[len(w.segments)-1]
-// 	if err := os.Truncate(active.filePath, 0); err != nil {
-// 		return err
-// 	}
-// 	active.writtenBlocks = 0
-
-// 	// Ostavi samo aktivni segment
-// 	w.segments = []*WALSegment{active}
-// 	return nil
-// }
