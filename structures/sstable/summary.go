@@ -126,11 +126,13 @@ func ReadSummary(path string, conf *config.Config, startOffset, endOffset int64,
 			break // Kraj fajla
 		}
 		block_num1 := block_num
-		for i := 1; i < 1000; i++ {
+		i := 1
+		for {
 			if len(block)+(i*1) <= i*conf.Block.BlockSize {
 				block_num1 = i + block_num
 				break
 			}
+			i++
 		}
 		if end_block != -1 && block_num1 > end_block {
 			break // Dostigli smo kraj bloka koji nas zanima

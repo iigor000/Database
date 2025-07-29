@@ -94,11 +94,13 @@ func ReadIndex(path string, conf *config.Config, startOffset, endOffset int64, b
 			break // Nema vise podataka
 		}
 		blockNum1 := blockNum
-		for i := 1; i < 1000; i++ {
+		i := 1
+		for {
 			if len(block)+(i*1) <= i*conf.Block.BlockSize {
 				blockNum1 += i
 				break
 			}
+			i++
 		}
 		if endBlock != -1 && blockNum1 > endBlock {
 			break // Dostigli smo kraj bloka koji nas zanima
