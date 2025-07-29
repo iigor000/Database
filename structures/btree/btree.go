@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"time"
 
 	"github.com/iigor000/database/structures/adapter"
 	memtable "github.com/iigor000/database/structures/adapter"
@@ -69,13 +70,11 @@ func (t *BTree) Update(k, v []byte, timestamp int64, tombstone bool) {
 	if exist {
 		t.update(k, value)
 	} else {
-		println("Inserting new key:", string(k))
 		t.Insert(k, value)
 	}
 }
 
 func (t *BTree) Delete(k []byte) {
-	println("Deleting key:", string(k))
 	if t.root == nil {
 		return
 	}
@@ -83,6 +82,7 @@ func (t *BTree) Delete(k []byte) {
 	// Prvo, ako kljuc postoji, postavi ga kao tombstone true
 	if entry, found := t.Search(k); found {
 		entry.Tombstone = true
+		entry.Timestamp = int64(time.Now().Unix())
 		value := serializeEntry(*entry)
 
 		// Azuriraj vrednost u stablu

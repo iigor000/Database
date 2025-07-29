@@ -181,6 +181,7 @@ func (s *SkipList) Delete(key []byte) {
 	}
 	s.Remove(key)
 	entry.Tombstone = true
+	entry.Timestamp = int64(time.Now().Unix())
 	serialized := serializeEntry(*entry)
 	s.Add(key, serialized)
 
@@ -189,7 +190,7 @@ func (s *SkipList) Delete(key []byte) {
 func (s *SkipList) Update(key []byte, value []byte, timestamp int64, tombstone bool) {
 	entry, found := s.Search(key)
 	if !found {
-		s.Create(key, value, time.Now().UnixNano(), tombstone)
+		s.Create(key, value, timestamp, tombstone)
 		return
 	}
 	s.Remove(key)
