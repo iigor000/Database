@@ -273,3 +273,10 @@ func (db *Database) ValidateMerkleTree(generation, level int) error {
 	}
 	return nil
 }
+func (db *Database) Close() {
+	if db.compression != nil {
+		if !db.compression.IsEmpty() {
+			db.compression.Write(db.config.Compression.DictionaryDir, db.CacheBlockManager)
+		}
+	}
+}

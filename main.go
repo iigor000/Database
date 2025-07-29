@@ -405,6 +405,7 @@ func main() {
 			}
 		case "exit":
 			fmt.Println("Goodbye!")
+			db.Close()
 			exit = true
 		default:
 			if choice != "" {

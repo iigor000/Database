@@ -38,6 +38,6 @@
     "refill_interval_s": 60
   },
   "compression": {
-    "dictionary_dir": "data/compression_dict"
+    "dictionary_dir": "data/compression.db"
   }
 }
