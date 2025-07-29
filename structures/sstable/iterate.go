@@ -32,7 +32,6 @@ func (si *SSTableIterator) Next() (adapter.MemtableEntry, bool) {
 	rec := si.CurrentRecord
 	if si.sstable.SingleFile {
 		if int(si.sstable.Data.DataFile.SizeOnDisk) < si.nextBlockNumber*si.blockManager.BM.BlockSize {
-
 			si.Stop()
 			return rec, true
 		}
