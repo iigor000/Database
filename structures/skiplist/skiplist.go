@@ -34,11 +34,13 @@ func (s *SkipList) roll() int {
 	return level
 }
 
+// Pravi novu skip listu
 func MakeSkipList(maxHeight int) *SkipList {
 	root := Node{}
 
 	node := &root
 
+	// Kreiramo donje nivoe
 	for i := 0; i < maxHeight; i++ {
 		newNode := Node{key: node.key}
 		node.down = &newNode
@@ -48,9 +50,13 @@ func MakeSkipList(maxHeight int) *SkipList {
 	return &SkipList{maxHeight: maxHeight, root: &root, size: 0}
 }
 
+// Pretrazuje skip listu
 func (s *SkipList) search(value []byte) []byte {
 	node := s.root
 
+	// Gledamo da li je kljuc jednak trenutnom, ako nije gledamo sledeci
+	// Ako je sledeci veci od trazenog, idemo na donji nivo
+	// Ako je sledeci manji, idemo na sledeci
 	for !bytes.Equal(node.key, value) {
 		if node.next == nil || bytes.Compare(node.next.key, value) == 1 {
 			if node.down != nil {
@@ -70,9 +76,12 @@ func (s *SkipList) search(value []byte) []byte {
 	return node.value
 }
 
+// Pretrazuje skip listu
 func (s *SkipList) SearchNodes(value []byte) []*Node {
 	node := s.root
 	nodes := make([]*Node, 0)
+
+	// Pronalazimo sve cvorove koji su manji od trazenog
 	for !bytes.Equal(node.key, value) && node.down != nil {
 		if node.next == nil || bytes.Compare(node.next.key, value) == 1 {
 			nodes = append(nodes, node)
@@ -96,9 +105,11 @@ func (s *SkipList) SearchNodes(value []byte) []*Node {
 	return nodes
 }
 
+// Dodaje novi cvor u skip listu
 func (s *SkipList) Add(key []byte, value []byte) {
 	levels := s.roll()
 
+	// Trazimo mesto za cvor
 	nodes := s.SearchNodes(key)
 	newNodeDown := &Node{key: key, value: value, next: nodes[len(nodes)-1].next}
 	nodes[len(nodes)-1].next = newNodeDown
@@ -112,6 +123,7 @@ func (s *SkipList) Add(key []byte, value []byte) {
 	}
 }
 
+// Nalazimo prethodne cvorove (koristi se za delete)
 func (s *SkipList) SearchBeforeNodes(key []byte) []*Node {
 	node := s.root
 	nodes := make([]*Node, 0)
@@ -148,6 +160,7 @@ func (s *SkipList) Remove(key []byte) {
 	}
 }
 
+// Kreira novi cvor (za koriscenje u memtablu)
 func (s *SkipList) Create(key []byte, value []byte, timestamp int64, tombstone bool) {
 	entry := memtable.MemtableEntry{
 		Key:       key,
@@ -160,6 +173,7 @@ func (s *SkipList) Create(key []byte, value []byte, timestamp int64, tombstone b
 	s.size++
 }
 
+// Trazi novi cvor (za memtable)
 func (s *SkipList) Search(key []byte) (*memtable.MemtableEntry, bool) {
 	value := s.search(key)
 
@@ -174,6 +188,7 @@ func (s *SkipList) Search(key []byte) (*memtable.MemtableEntry, bool) {
 	return &entry, true
 }
 
+// Brise cvor (za memtable)
 func (s *SkipList) Delete(key []byte) {
 	entry, found := s.Search(key)
 	if !found {
@@ -186,6 +201,7 @@ func (s *SkipList) Delete(key []byte) {
 
 }
 
+// Azurira cvor - ako ne postoji doda ga, a ako postoji menja vrednost (za memtable)
 func (s *SkipList) Update(key []byte, value []byte, timestamp int64, tombstone bool) {
 	entry, found := s.Search(key)
 	if !found {
@@ -235,6 +251,7 @@ func deserializeEntry(data []byte) memtable.MemtableEntry {
 	}
 }
 
+// Clear - briše sve čvorove u skip listi
 func (s *SkipList) Clear() {
 	root := Node{}
 	node := &root

@@ -19,8 +19,6 @@ import (
 	"github.com/iigor000/database/util"
 )
 
-//TODO: Dodati (wal) i kompresiju kad budu zavrseni
-
 type Database struct {
 	wal               *writeaheadlog.WAL
 	compression       *compression.Dictionary
@@ -157,7 +155,7 @@ func (db *Database) put(key string, value []byte) error {
 }
 
 func (db *Database) Get(key string) ([]byte, bool, error) {
-	// Proveravamp da li po token bucketu korisnik moze da unese podatke
+	// Proveravamo da li po token bucketu korisnik moze da unese podatke
 	allow, err := CheckBucket(db)
 	if err != nil {
 		return nil, false, err
@@ -221,7 +219,7 @@ func (db *Database) get(key string) ([]byte, bool, error) {
 }
 
 func (db *Database) Delete(key string) error {
-	// Proveravamp da li po token bucketu korisnik moze da unese podatke
+	// Proveravamo da li po token bucketu korisnik moze da unese podatke
 	allow, err := CheckBucket(db)
 	if err != nil {
 		return err
