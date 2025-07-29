@@ -455,12 +455,18 @@ func StartSSTable(level int, gen int, conf *config.Config, dict *compression.Dic
 		return nil, fmt.Errorf("invalid generation number: %d", gen)
 	}
 	dir := fmt.Sprintf("%s/%d/%d", conf.SSTable.SstableDirectory, level, gen)
+	//Probaj da nadjes SSTable u jednom fajlu
+	singleFile := false
+	pathSingle := CreateFileName(dir, gen, "SSTable", "db")
+	if _, err := os.Stat(pathSingle); err == nil {
+		singleFile = true
+	}
 
-	if conf.SSTable.SingleFile {
+	if singleFile {
 		sstable := &SSTable{
 			Gen:        gen,
 			Level:      level,
-			SingleFile: conf.SSTable.SingleFile,
+			SingleFile: singleFile,
 			Dir:        dir,
 		}
 		path := CreateFileName(dir, gen, "SSTable", "db")
@@ -567,7 +573,7 @@ func StartSSTable(level int, gen int, conf *config.Config, dict *compression.Dic
 		Filter:         bf,
 		Metadata:       &merkle.MerkleTree{},
 		Dir:            dir,
-		SingleFile:     conf.SSTable.SingleFile,
+		SingleFile:     singleFile,
 	}
 	return sstable, nil
 }
