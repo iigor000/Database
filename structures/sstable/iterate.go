@@ -49,29 +49,13 @@ func (si *SSTableIterator) Next() (adapter.MemtableEntry, bool) {
 func (si *SSTableIterator) Stop() {
 	si.blockManager = nil
 	si.sstable = nil
-	si.CurrentRecord = adapter.MemtableEntry{}
+	si.CurrentRecord = adapter.MemtableEntry{Key: nil} // Oslobađanje trenutnog zapisa
 	si.nextBlockNumber = -1
 }
 
 type PrefixIterator struct {
 	Iterator *SSTableIterator
 	Prefix   string
-}
-
-func (pi *PrefixIterator) HasNext() bool {
-	if pi.Iterator.CurrentRecord.Key == nil {
-		return false // Nema vise zapisa
-	}
-	if pi.Iterator.sstable.SingleFile {
-		if int(pi.Iterator.sstable.Data.DataFile.SizeOnDisk) < pi.Iterator.nextBlockNumber*pi.Iterator.blockManager.BM.BlockSize {
-			return false
-		}
-	}
-	rec, _ := pi.Iterator.sstable.Data.ReadRecord(pi.Iterator.blockManager, pi.Iterator.nextBlockNumber, pi.Iterator.sstable.CompressionKey)
-	if rec.Key == nil {
-		return false // Nema vise zapisa
-	}
-	return bytes.HasPrefix(rec.Key, []byte(pi.Prefix))
 }
 
 // Inicijalizuje iterator koji vraca samo zapise sa datim prefiksom
@@ -101,36 +85,39 @@ func (sst *SSTable) PrefixIterate(prefix string, bm *block_organization.CachedBl
 	}
 }
 func (pi *PrefixIterator) Next() (adapter.MemtableEntry, bool) {
+	if pi.Iterator == nil {
+		return adapter.MemtableEntry{}, false // Nema vise zapisa
+	}
 	if pi.Iterator.CurrentRecord.Key == nil {
-		return adapter.MemtableEntry{}, false
+		return adapter.MemtableEntry{}, false // Nema vise zapisa
 	}
 	record := pi.Iterator.CurrentRecord
 	if pi.Iterator.sstable.SingleFile {
 		if int(pi.Iterator.sstable.Data.DataFile.SizeOnDisk) < pi.Iterator.nextBlockNumber*pi.Iterator.blockManager.BM.BlockSize {
-			pi.Iterator.Stop()
+			pi.Stop()
 			return record, true
 		}
 	}
 	rec, nextBlock := pi.Iterator.sstable.Data.ReadRecord(pi.Iterator.blockManager, pi.Iterator.nextBlockNumber, pi.Iterator.sstable.CompressionKey)
 	if !bytes.HasPrefix(rec.Key, []byte(pi.Prefix)) {
-		pi.Iterator.Stop() // Zatvaramo iterator ako nema vise zapisa sa tim prefiksom
+		pi.Stop() // Zatvaramo iterator ako nema vise zapisa sa tim prefiksom
 		return record, true
 	}
 	pi.Iterator.CurrentRecord = rec
 	pi.Iterator.nextBlockNumber = nextBlock
 
 	if nextBlock == -1 {
-		pi.Iterator.Stop() // Zatvaramo iterator ako nema vise zapisa
+		pi.Stop() // Zatvaramo iterator ako nema vise zapisa
 		return adapter.MemtableEntry{}, false
 	}
 
 	return record, true
 }
 
-func (pi *PrefixIterator) Close() {
+func (pi *PrefixIterator) Stop() {
 	pi.Iterator.Stop()
-	pi.Iterator = nil
 	pi.Prefix = ""
+	pi.Iterator.CurrentRecord = adapter.MemtableEntry{Key: nil} // Oslobodi trenutni zapis
 }
 
 type RangeIterator struct {
@@ -161,22 +148,6 @@ func (sst *SSTable) RangeIterate(startKey, endKey string, bm *block_organization
 	}
 }
 
-func (ri *RangeIterator) HasNext() bool {
-	if ri.Iterator.CurrentRecord.Key == nil {
-		return false // Nema vise zapisa
-	}
-	if ri.Iterator.sstable.SingleFile {
-		if int(ri.Iterator.sstable.Data.DataFile.SizeOnDisk) < ri.Iterator.nextBlockNumber*ri.Iterator.blockManager.BM.BlockSize {
-			return false
-		}
-	}
-	rec, _ := ri.Iterator.sstable.Data.ReadRecord(ri.Iterator.blockManager, ri.Iterator.nextBlockNumber, ri.Iterator.sstable.CompressionKey)
-	if rec.Key == nil {
-		return false // Nema vise zapisa
-	}
-	return bytes.Compare(rec.Key, []byte(ri.StartKey)) >= 0 && bytes.Compare(rec.Key, []byte(ri.EndKey)) <= 0
-}
-
 func (ri *RangeIterator) Next() (adapter.MemtableEntry, bool) {
 	if ri.Iterator.CurrentRecord.Key == nil {
 		return adapter.MemtableEntry{}, false // Nema vise zapisa
@@ -184,7 +155,7 @@ func (ri *RangeIterator) Next() (adapter.MemtableEntry, bool) {
 	record := ri.Iterator.CurrentRecord
 	if ri.Iterator.sstable.SingleFile {
 		if int(ri.Iterator.sstable.Data.DataFile.SizeOnDisk) < ri.Iterator.nextBlockNumber*ri.Iterator.blockManager.BM.BlockSize {
-			ri.Iterator.Stop()
+			ri.Stop()
 			return record, false
 		}
 	}
@@ -193,7 +164,7 @@ func (ri *RangeIterator) Next() (adapter.MemtableEntry, bool) {
 	ri.Iterator.nextBlockNumber = nextBlock
 
 	if nextBlock == -1 {
-		ri.Iterator.Stop() // Zatvaramo iterator ako nema vise zapisa u opsegu
+		ri.Stop() // Zatvaramo iterator ako nema vise zapisa u opsegu
 		return adapter.MemtableEntry{}, false
 	}
 	if bytes.Compare(record.Key, []byte(ri.StartKey)) < 0 || bytes.Compare(record.Key, []byte(ri.EndKey)) > 0 {
@@ -203,9 +174,9 @@ func (ri *RangeIterator) Next() (adapter.MemtableEntry, bool) {
 	return record, true
 }
 
-func (ri *RangeIterator) Close() {
+func (ri *RangeIterator) Stop() {
 	ri.Iterator.Stop()
-	ri.Iterator = nil
 	ri.StartKey = ""
 	ri.EndKey = ""
+	ri.Iterator.CurrentRecord = adapter.MemtableEntry{Key: nil}
 }

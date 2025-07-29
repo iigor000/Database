@@ -15,7 +15,7 @@ func CreateConfig() *config.Config {
 			SstableDirectory: "./sstable_test",
 			UseCompression:   true,
 			SummaryLevel:     2,
-			SingleFile:       false,
+			SingleFile:       true,
 		},
 		Memtable: config.MemtableConfig{
 			NumberOfMemtables: 1,
@@ -187,12 +187,6 @@ func TestSSTableIterate(t *testing.T) {
 		keyCopy := make([]byte, len(entry.Key))
 		copy(keyCopy, entry.Key)
 
-		found := sstable.Filter.Read(keyCopy)
-		if !found {
-			println("Key not found in filter:", string(entry.Key))
-		} else {
-			println("Key found in filter:", string(entry.Key))
-		}
 	}
 	// Test PrefixIterate
 	println("Testing PrefixIterate...")

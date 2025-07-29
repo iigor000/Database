@@ -115,81 +115,107 @@ func (l *LSMTreeIterator) Stop() {
 }
 
 type PrefixIterator struct {
-	Iterator *LSMTreeIterator
-	Prefix   string
+	iterators     []*sstable.PrefixIterator
+	CurrentRecord *adapter.MemtableEntry
+	Prefix        string
 }
 
-func (pi *PrefixIterator) HasNext() bool {
-	if pi.Iterator.CurrentEntry.Key == nil {
-		return false // Nema više zapisa
-	}
+func PrefixIterate(tables []*sstable.SSTable, conf *config.Config, prefix string, bm *block_organization.CachedBlockManager, dict *compression.Dictionary) *PrefixIterator {
+	iterators := make([]*sstable.PrefixIterator, 0, len(tables))
 
-	if bytes.HasPrefix(pi.Iterator.CurrentEntry.Key, []byte(pi.Prefix)) {
-		return true // Trenutni zapis ima prefiks
-	}
+	for _, sstable := range tables {
+		iter := sstable.PrefixIterate(prefix, bm)
+		iterators = append(iterators, iter)
 
-	for _, iter := range pi.Iterator.iterators {
-		it, ok := iter.Next()
-		if ok && bytes.HasPrefix(it.Key, []byte(pi.Prefix)) {
-			return true // Pronađen je zapis sa prefiksom
-		}
-	}
-
-	return false // Nema više zapisa sa prefiksom
-}
-
-func (pi *PrefixIterator) Next() *adapter.MemtableEntry {
-	if !pi.HasNext() {
-		return nil // Nema više zapisa sa prefiksom
-	}
-
-	currentEntry := pi.Iterator.CurrentEntry
-
-	if bytes.HasPrefix(currentEntry.Key, []byte(pi.Prefix)) {
-		return currentEntry // Vraća trenutni zapis ako ima prefiks
-	}
-
-	for _, iter := range pi.Iterator.iterators {
-		it, ok := iter.Next()
-		if ok && bytes.HasPrefix(it.Key, []byte(pi.Prefix)) {
-			pi.Iterator.CurrentEntry = &it // Ažuriraj trenutni zapis
-			return &it
-		}
-	}
-
-	return nil // Nema više zapisa sa prefiksom
-}
-
-func PrefixIterate(tables []*sstable.SSTable, conf *config.Config, prefix string, bm *block_organization.CachedBlockManager, dict *compression.Dictionary) (*PrefixIterator, error) {
-	if len(tables) == 0 {
-		return nil, nil // Nema SSTable-ova
-	}
-
-	if len(prefix) == 0 {
-		// Ako je prefiks prazan, vraćamo iterator koji sadrži sve zapise
-		return &PrefixIterator{
-			Iterator: NewLSMTreeIterator(tables, bm),
-			Prefix:   prefix,
-		}, nil
-	}
-
-	it := LSMTreeIterator{
-		CurrentEntry: &adapter.MemtableEntry{Key: nil},
-		iterators:    make([]*sstable.SSTableIterator, 0),
-	}
-
-	for _, sst := range tables {
-		iter := sst.PrefixIterate(prefix, bm)
 		if iter == nil {
-			continue // Ako iterator nije uspeo da se kreira, preskoči
+			continue // Ako iterator nije uspeo da se kreira, preskoči ovaj SSTable
 		}
-		it.iterators = append(it.iterators, iter.Iterator)
+	}
+
+	if len(iterators) == 0 {
+		return nil
+	}
+
+	minEntry := adapter.MemtableEntry{Key: nil}
+	for _, iter := range iterators {
+		it, ok := iter.Next()
+		if !ok {
+			continue // Ako iterator nema sledeći element, preskoči
+		}
+
+		if minEntry.Key == nil {
+			minEntry = it
+		}
+
+		if bytes.Compare(it.Key, minEntry.Key) < 0 {
+			minEntry = it // Pronađen je manji ključ, ažuriraj minEntry
+		} else if bytes.Equal(minEntry.Key, it.Key) && minEntry.Timestamp < it.Timestamp {
+			minEntry = it // Ažuriraj minEntry ako je timestamp veći
+		}
+	}
+
+	for _, iter := range iterators {
+		if iter != nil {
+			if iter.Iterator.CurrentRecord.Key != nil {
+				iter.Iterator.CurrentRecord = minEntry // Postavi trenutni zapis na najmanji ključ
+			}
+		}
 	}
 
 	return &PrefixIterator{
-		Iterator: &it,
-		Prefix:   prefix,
-	}, nil
+		CurrentRecord: &minEntry,
+		iterators:     iterators,
+	}
+}
+
+func (pi *PrefixIterator) Next() *adapter.MemtableEntry {
+	if len(pi.iterators) == 0 {
+		return nil // Nema više elemenata
+	}
+
+	currentEntry := pi.CurrentRecord
+	minEntry := adapter.MemtableEntry{Key: nil}
+	for _, iter := range pi.iterators {
+		if iter == nil {
+			continue // Ako iterator nije uspeo da se kreira, preskoči
+		}
+
+		it, ok := iter.Next()
+		if !ok {
+			continue // Ako iterator nema sledeći element, preskoči
+		}
+
+		if minEntry.Key == nil || bytes.Compare(it.Key, minEntry.Key) < 0 {
+			minEntry = it // Pronađen je manji ključ, ažuriraj minEntry
+		} else if minEntry.Timestamp < it.Timestamp {
+			minEntry = it // Ažuriraj minEntry ako je timestamp veći
+		}
+	}
+
+	if minEntry.Key == nil {
+		pi.Stop()           // Ako nema više elemenata, zaustavi iteraciju
+		return currentEntry // Nema više elemenata
+	}
+
+	for _, iter := range pi.iterators {
+		if iter != nil {
+			if iter.Iterator.CurrentRecord.Key != nil {
+				iter.Iterator.CurrentRecord = minEntry // Postavi trenutni zapis na najmanji ključ
+			}
+		}
+	}
+
+	return currentEntry
+}
+
+func (pi *PrefixIterator) Stop() {
+	for _, iter := range pi.iterators {
+		if iter != nil {
+			iter.Stop()
+		}
+	}
+	pi.CurrentRecord = &adapter.MemtableEntry{Key: nil} // Oslobodi trenutni zapis
+	pi.iterators = nil                                  // Oslobodi iteratore
 }
 
 // PrefixScan pretražuje sve SSTable-ove u LSM stablu i vraća sve zapise koji počinju sa datim prefiksom
@@ -216,10 +242,7 @@ func PrefixScan(conf *config.Config, prefix string, cbm *block_organization.Cach
 		}
 	}
 
-	merged, err := PrefixIterate(tables, conf, prefix, cbm, dict)
-	if err != nil {
-		return nil, err
-	}
+	merged := PrefixIterate(tables, conf, prefix, cbm, dict)
 
 	if len(tables) == 0 {
 		return nil, nil
@@ -227,10 +250,10 @@ func PrefixScan(conf *config.Config, prefix string, cbm *block_organization.Cach
 
 	var results []*sstable.DataRecord
 
-	for merged.HasNext() {
+	for {
 		entry := merged.Next()
 		if entry == nil {
-			continue // nema više zapisa
+			break // nema više zapisa
 		}
 		keyStr := string(entry.Key)
 		if seenKeys[keyStr] {
