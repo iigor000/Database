@@ -10,6 +10,18 @@ import (
 )
 
 func CreateBucket(db *Database) error {
+	if db.username == "root" {
+		return nil
+	}
+
+	_, found, err := db.get(util.TokenBucketPrefix + db.username)
+	if err != nil {
+		return fmt.Errorf("error getting token bucket: %w", err)
+	}
+	if found {
+		return nil
+	}
+
 	bucket := map[string]interface{}{
 		"tokens":    db.config.TokenBucket.StartTokens,
 		"timestamp": int64(time.Now().Unix()),
